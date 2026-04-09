@@ -96,7 +96,16 @@ class AwsProvisionedIntegrationTest {
         iam.attachRolePolicy(AttachRolePolicyRequest.builder()
             .roleName(ROLE_NAME).policyArn(policyArn).build());
 
-        // 3. Pod identity association
+        // IAM is eventually consistent — wait for trust policy to propagate
+        try { Thread.sleep(10_000); } catch (InterruptedException ignored) {}
+
+        // 3. Clean up any stale associations for this namespace/SA, then create fresh one
+        eks.listPodIdentityAssociations(ListPodIdentityAssociationsRequest.builder()
+            .clusterName(clusterName).namespace(NAMESPACE).serviceAccount(SERVICE_ACCT).build()
+        ).associations().forEach(a -> eks.deletePodIdentityAssociation(
+            DeletePodIdentityAssociationRequest.builder()
+                .clusterName(clusterName).associationId(a.associationId()).build()));
+
         associationId = eks.createPodIdentityAssociation(CreatePodIdentityAssociationRequest.builder()
             .clusterName(clusterName)
             .namespace(NAMESPACE)
