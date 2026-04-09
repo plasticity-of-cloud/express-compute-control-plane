@@ -34,9 +34,6 @@ public class EksAuthResource {
     @Inject
     AwsCredentialService awsCredentialService;
     
-    @ConfigProperty(name = "eks.auth.skip-audience-check", defaultValue = "false")
-    boolean skipAudienceCheck;
-    
     @POST
     @Counted(value = "eks_auth_requests_total", description = "Total number of EKS Auth requests")
     @Timed(value = "eks_auth_request_duration", description = "EKS Auth request duration")
@@ -52,9 +49,9 @@ public class EksAuthResource {
             
             LOG.infof("Processing AssumeRoleForPodIdentity request for cluster: %s", request.getClusterName());
             
-            // 1. Validate service account token
+            // 1. Validate service account token via Kubernetes TokenReview
             TokenValidationService.TokenClaims claims = tokenValidationService.validateToken(
-                request.getToken(), request.getClusterName(), skipAudienceCheck);
+                request.getToken(), request.getClusterName());
             
             // 2. Look up pod identity association
             String roleArn = podIdentityAssociationService.getRoleArnForServiceAccount(

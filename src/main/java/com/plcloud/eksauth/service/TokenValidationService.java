@@ -1,21 +1,22 @@
 package com.plcloud.eksauth.service;
 
-import io.smallrye.jwt.auth.principal.JWTParser;
-import io.smallrye.jwt.auth.principal.ParseException;
+import io.fabric8.kubernetes.api.model.authentication.TokenReview;
+import io.fabric8.kubernetes.api.model.authentication.TokenReviewBuilder;
+import io.fabric8.kubernetes.api.model.authentication.TokenReviewStatus;
+import io.fabric8.kubernetes.client.KubernetesClient;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @ApplicationScoped
 public class TokenValidationService {
 
     private static final Logger LOG = Logger.getLogger(TokenValidationService.class);
-    
+
     public static final String EKS_POD_IDENTITY_AUDIENCE = "pods.eks.amazonaws.com";
 
     public static class TokenClaims {
@@ -28,7 +29,7 @@ public class TokenValidationService {
         private final Instant expiration;
 
         public TokenClaims(String namespace, String serviceAccount, String serviceAccountUid,
-                          String podName, String podUid, String subject, Instant expiration) {
+                           String podName, String podUid, String subject, Instant expiration) {
             this.namespace = namespace;
             this.serviceAccount = serviceAccount;
             this.serviceAccountUid = serviceAccountUid;
@@ -45,7 +46,7 @@ public class TokenValidationService {
         public String getPodUid() { return podUid; }
         public String getSubject() { return subject; }
         public Instant getExpiration() { return expiration; }
-        
+
         public Map<String, String> getSessionTags() {
             return Map.of(
                 "kubernetes-namespace", namespace,
@@ -57,84 +58,61 @@ public class TokenValidationService {
     }
 
     @Inject
-    JWTParser jwtParser;
+    KubernetesClient kubernetesClient;
 
-    public TokenClaims validateToken(String token, String clusterName) {
-        return validateToken(token, clusterName, false);
+    // For testing
+    void setKubernetesClient(KubernetesClient kubernetesClient) {
+        this.kubernetesClient = kubernetesClient;
     }
 
-    public TokenClaims validateToken(String token, String clusterName, boolean skipAudienceCheck) {
+    public TokenClaims validateToken(String token, String clusterName) {
         if (token.startsWith("Bearer ")) {
             token = token.substring(7);
         }
 
-        try {
-            JsonWebToken jwt = jwtParser.parse(token);
+        TokenReview review = kubernetesClient.tokenReviews().create(
+            new TokenReviewBuilder()
+                .withNewSpec()
+                    .withToken(token)
+                    .withAudiences(List.of(EKS_POD_IDENTITY_AUDIENCE))
+                .endSpec()
+                .build()
+        );
 
-            // Validate required claims
-            String namespace = jwt.getClaim("kubernetes.io/serviceaccount/namespace");
-            String serviceAccount = jwt.getClaim("kubernetes.io/serviceaccount/service-account.name");
+        TokenReviewStatus status = review.getStatus();
 
-            if (namespace == null || serviceAccount == null) {
-                throw new IllegalArgumentException("Missing namespace or service account claims");
-            }
-
-            // Validate audience (skip for CI/CD compatibility if requested)
-            if (!skipAudienceCheck) {
-                validateAudience(jwt);
-            }
-
-            // Validate expiration
-            Instant expiration = validateExpiration(jwt);
-
-            // Extract additional claims
-            String serviceAccountUid = jwt.getClaim("kubernetes.io/serviceaccount/service-account.uid");
-            String podName = jwt.getClaim("kubernetes.io/pod/name");
-            String podUid = jwt.getClaim("kubernetes.io/pod/uid");
-
-            LOG.infof("Validated token for %s/%s in cluster %s (pod: %s)", 
-                namespace, serviceAccount, clusterName, podName);
-
-            return new TokenClaims(namespace, serviceAccount, serviceAccountUid, 
-                podName, podUid, jwt.getSubject(), expiration);
-
-        } catch (ParseException e) {
-            LOG.errorf("Token validation failed: %s", e.getMessage());
-            throw new IllegalArgumentException("Invalid service account token", e);
+        if (status == null || !Boolean.TRUE.equals(status.getAuthenticated())) {
+            String reason = status != null ? status.getError() : "no status returned";
+            LOG.warnf("TokenReview rejected for cluster %s: %s", clusterName, reason);
+            throw new IllegalArgumentException("Invalid service account token: " + reason);
         }
+
+        // status.getUser().getUsername() = "system:serviceaccount:<namespace>:<sa>"
+        String username = status.getUser().getUsername();
+        String[] parts = username.split(":");
+        if (parts.length != 4) {
+            throw new IllegalArgumentException("Unexpected token subject format: " + username);
+        }
+
+        String namespace = parts[2];
+        String serviceAccount = parts[3];
+        String serviceAccountUid = status.getUser().getUid();
+
+        // Extra info map may carry pod name/uid depending on Kubernetes version
+        Map<String, java.util.List<String>> extra = status.getUser().getExtra();
+        String podName = getExtra(extra, "authentication.kubernetes.io/pod-name");
+        String podUid  = getExtra(extra, "authentication.kubernetes.io/pod-uid");
+
+        LOG.infof("TokenReview validated for %s/%s in cluster %s (pod: %s)",
+            namespace, serviceAccount, clusterName, podName);
+
+        return new TokenClaims(namespace, serviceAccount, serviceAccountUid,
+            podName, podUid, username, null);
     }
 
-    private void validateAudience(JsonWebToken jwt) {
-        Object audClaim = jwt.getClaim("aud");
-        String audience = null;
-        
-        if (audClaim instanceof String) {
-            audience = (String) audClaim;
-        } else if (audClaim instanceof String[]) {
-            String[] audiences = (String[]) audClaim;
-            if (audiences.length > 0) {
-                audience = audiences[0];
-            }
-        }
-        
-        if (audience == null || !EKS_POD_IDENTITY_AUDIENCE.equals(audience)) {
-            LOG.warnf("Invalid audience: %s, expected: %s", audience, EKS_POD_IDENTITY_AUDIENCE);
-            throw new IllegalArgumentException(
-                "Invalid token audience. Expected: " + EKS_POD_IDENTITY_AUDIENCE);
-        }
-    }
-
-    private Instant validateExpiration(JsonWebToken jwt) {
-        Long exp = jwt.getClaim("exp");
-        if (exp == null) {
-            throw new IllegalArgumentException("Token missing expiration claim");
-        }
-        
-        Instant expiration = Instant.ofEpochSecond(exp);
-        if (expiration.isBefore(Instant.now())) {
-            throw new IllegalArgumentException("Token has expired at " + expiration);
-        }
-        
-        return expiration;
+    private String getExtra(Map<String, java.util.List<String>> extra, String key) {
+        if (extra == null) return null;
+        var val = extra.get(key);
+        return (val != null && !val.isEmpty()) ? val.get(0) : null;
     }
 }
