@@ -1,60 +1,65 @@
 # AWS EKS Auth Service Proxy
 
-A Quarkus-based service that implements an AWS EKS Auth Service proxy for CI/CD environments, enabling applications to obtain temporary AWS credentials using Kubernetes service account tokens without requiring actual EKS infrastructure.
+A Quarkus-based service that replicates the AWS EKS Auth Service (`AssumeRoleForPodIdentity`) for local development and CI/CD environments.
+
+## How It Works
+
+Each request goes through four validation steps mirroring the real EKS Auth flow:
+
+1. **Pod Identity Association** — looks up the IAM role via `eks:ListPodIdentityAssociations` / `eks:DescribePodIdentityAssociation` (falls back to a Kubernetes ConfigMap, then a generated default)
+2. **Kubernetes TokenReview** — submits the token to the K8s API server, which validates the JWT signature and audience (`pods.eks.amazonaws.com`)
+3. **Signature verification** — handled by the TokenReview above (K8s API server verifies the JWT)
+4. **STS AssumeRole** — assumes the mapped IAM role and returns temporary credentials
 
 ## Quick Start
 
 ### Prerequisites
 - Java 21+
 - Maven 3.8+
-- Docker (for containerized builds)
-- AWS credentials with STS permissions
+- AWS credentials (`~/.aws` or environment) with `eks:*`, `sts:AssumeRole` permissions
+- Kubernetes cluster accessible via `~/.kube/config`
 
 ### Build and Run
 
-#### Development Mode
 ```bash
-./mvnw compile quarkus:dev
-```
+# Development mode
+mvn -pl eks-auth-proxy compile quarkus:dev
 
-#### Native Build
-```bash
-./build.sh --native
-```
+# JVM build
+mvn -pl eks-auth-proxy package
+java -jar eks-auth-proxy/target/quarkus-app/quarkus-run.jar
 
-#### Docker Run
-```bash
+# Docker
 docker run -p 8080:8080 \
-  -e AWS_ACCOUNT_ID=123456789012 \
-  -e AWS_ACCESS_KEY_ID=your-key \
-  -e AWS_SECRET_ACCESS_KEY=your-secret \
+  -e AWS_ACCESS_KEY_ID=... \
+  -e AWS_SECRET_ACCESS_KEY=... \
+  -e AWS_REGION=us-east-1 \
   aws-eks-auth-service-proxy:latest
 ```
 
-## API Usage
+## API
 
 ### AssumeRoleForPodIdentity
 ```bash
 curl -X POST http://localhost:8080/ \
   -H "Content-Type: application/json" \
-  -d '{
-    "ClusterName": "my-cluster",
-    "Token": "eyJhbGciOiJSUzI1NiJ9..."
-  }'
+  -d '{"ClusterName": "my-cluster", "Token": "eyJ..."}'
 ```
 
-### Health Checks
+### Health & Metrics
 ```bash
-curl http://localhost:8080/health/live   # Liveness
-curl http://localhost:8080/health/ready  # Readiness
-curl http://localhost:8080/metrics       # Prometheus metrics
+curl http://localhost:8080/health/live
+curl http://localhost:8080/health/ready
+curl http://localhost:8080/metrics
 ```
 
 ## Configuration
 
 ### Pod Identity Associations
-Create a ConfigMap to define service account to IAM role mappings:
 
+Primary source is the AWS EKS API (requires a real cluster with `eks-pod-identity-agent` add-on).
+
+Fallback: a Kubernetes ConfigMap:
 ```yaml
 apiVersion: v1
 kind: ConfigMap
@@ -67,83 +72,84 @@ data:
 ```
 
 ### Environment Variables
-- `AWS_ACCOUNT_ID`: AWS account ID for default role ARN generation
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`: AWS credentials for STS operations
-- `AWS_REGION`: AWS region (default: us-east-1)
+
+| Variable | Description |
+|----------|-------------|
+| `AWS_ACCOUNT_ID` | Used for fallback role ARN generation only |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS credentials for EKS + STS calls |
+| `AWS_REGION` | AWS region (default: `us-east-1`) |
+
+### Key application.properties
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `eks.pod-identity.configmap.name` | `pod-identity-associations` | Fallback ConfigMap name |
+| `eks.pod-identity.configmap.namespace` | `kube-system` | Fallback ConfigMap namespace |
+| `aws.sts.session-duration` | `PT1H` | STS session duration |
 
 ## CI/CD Integration
 
-### Application Setup
 ```bash
 export AWS_CONTAINER_CREDENTIALS_FULL_URI=http://eks-auth-proxy:8080/
 export AWS_CONTAINER_AUTHORIZATION_TOKEN="Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
 
-# Now use AWS SDK normally
+# AWS SDK now uses the proxy automatically
 aws s3 ls
 ```
 
-### Kubernetes Deployment
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: eks-auth-proxy
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: eks-auth-proxy
-  template:
-    metadata:
-      labels:
-        app: eks-auth-proxy
-    spec:
-      containers:
-      - name: eks-auth-proxy
-        image: aws-eks-auth-service-proxy:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: AWS_ACCOUNT_ID
-          value: "123456789012"
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 8080
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 8080
+## Testing
+
+### Unit tests (no AWS required)
+```bash
+mvn -pl eks-auth-proxy test
 ```
 
-## Features
+### Full integration test (provisions real AWS resources)
 
-- **EKS Auth API Compatible**: Implements the `AssumeRoleForPodIdentity` operation
-- **Kubernetes Native**: Uses Fabric8 client for ConfigMap-based role associations
-- **Fast Startup**: Native compilation with GraalVM for sub-second startup
-- **Observability**: Health checks, Prometheus metrics, structured logging
-- **CI/CD Optimized**: Designed for testing and CI/CD environments
+Requires an EKS cluster with `eks-pod-identity-agent` add-on installed.
 
-## Architecture
+```bash
+# Generate a service account token
+kubectl create token <sa> -n <ns> --audience pods.eks.amazonaws.com --duration 3600s
 
-1. **Token Validation**: Decodes Kubernetes JWT service account tokens
-2. **Role Association**: Maps service accounts to IAM roles via ConfigMap
-3. **AWS STS Integration**: Assumes roles and returns temporary credentials
-4. **Response Formatting**: Returns AWS EKS Auth compatible responses
+# Run the provisioned integration test
+# Creates IAM role + ECR policy + pod identity association, runs the full flow, then cleans up
+mvn -pl eks-auth-proxy test \
+  -Dintegration.aws=true \
+  -Dintegration.cluster=my-cluster \
+  -Daws.region=ap-south-1
 
-## Documentation
+# Run with a real pre-existing token (no AWS provisioning)
+mvn -pl eks-auth-proxy test \
+  -Dintegration.full=true \
+  -Dintegration.cluster=my-cluster \
+  -Dintegration.token=eyJ...
+```
 
-- [Project Overview](.kiro/PROJECT_OVERVIEW.md) - Detailed project documentation
-- [Development Guide](.kiro/DEVELOPMENT.md) - Development setup and guidelines
-- [CI/CD Integration](.kiro/CI_CD_INTEGRATION.md) - Integration patterns and examples
+## Module Structure
+
+```
+eks-auth-proxy/src/main/java/com/plcloud/eksauth/
+├── resource/
+│   ├── EksAuthResource.java          # POST / endpoint
+│   └── HealthResource.java
+├── service/
+│   ├── TokenValidationService.java   # Kubernetes TokenReview
+│   ├── PodIdentityAssociationService.java  # EKS API + ConfigMap lookup
+│   ├── AwsCredentialService.java     # STS AssumeRole
+│   ├── EksClientProducer.java
+│   └── StsClientProducer.java
+└── model/
+    ├── AssumeRoleForPodIdentityRequest.java
+    └── AssumeRoleForPodIdentityResponse.java
+```
 
 ## Security Notes
 
-- Designed for CI/CD and testing environments
-- Does not perform cryptographic verification of service account tokens
-- Requires AWS credentials with appropriate STS permissions
-- Should be deployed in trusted networks only
+- Token signature verification is delegated to the Kubernetes API server via TokenReview
+- Requires AWS credentials with `eks:ListPodIdentityAssociations`, `eks:DescribePodIdentityAssociation`, and `sts:AssumeRole`
+- Deploy in trusted networks only
 
 ## License
 
-This project is licensed under the MIT License.
+MIT
