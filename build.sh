@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Defaults
-TARGET="all"       # all | proxy | cli
+TARGET="all"       # all | proxy | cli | webhook
 BUILD_TYPE="jvm"   # jvm | native
 PUSH=false
 TAG="latest"
@@ -21,7 +21,7 @@ usage() {
 Usage: $0 [OPTIONS]
 
 Options:
-  --target TARGET    What to build: all (default), proxy, cli
+  --target TARGET    What to build: all (default), proxy, cli, webhook
   --native           Build native executable (uses GraalVM container build)
   --push             Push container image after build
   --tag TAG          Image tag (default: latest)
@@ -90,14 +90,34 @@ build_cli() {
     echo -e "${GREEN}cli image: $img${NC}"
 }
 
+build_webhook() {
+    local img; img=$(image_name "eks-pod-identity-webhook")
+    echo -e "${YELLOW}Building eks-pod-identity-webhook ($BUILD_TYPE)...${NC}"
+
+    if [[ "$BUILD_TYPE" == "native" ]]; then
+        $MVN -pl eks-pod-identity-webhook package -Pnative \
+            -Dquarkus.container-image.build=true \
+            -Dquarkus.container-image.image="$img" \
+            ${PUSH:+-Dquarkus.container-image.push=true}
+    else
+        $MVN -pl eks-pod-identity-webhook package \
+            -Dquarkus.container-image.build=true \
+            -Dquarkus.container-image.image="$img" \
+            ${PUSH:+-Dquarkus.container-image.push=true}
+    fi
+
+    echo -e "${GREEN}webhook image: $img${NC}"
+}
+
 echo -e "${GREEN}=== EKS Auth Build ===${NC}"
 echo "target=$TARGET  type=$BUILD_TYPE  push=$PUSH  tag=$TAG"
 echo
 
 case "$TARGET" in
-    proxy) build_proxy ;;
-    cli)   build_cli ;;
-    all)   build_proxy; build_cli ;;
+    proxy)   build_proxy ;;
+    cli)     build_cli ;;
+    webhook) build_webhook ;;
+    all)     build_proxy; build_cli; build_webhook ;;
     *) echo -e "${RED}Unknown target: $TARGET${NC}"; exit 1 ;;
 esac
 

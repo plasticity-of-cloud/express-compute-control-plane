@@ -75,6 +75,14 @@
       <artifactId>eks-pod-identity-crd</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-container-image-jib</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-kubernetes</artifactId>
+    </dependency>
 
     <!-- Test -->
     <dependency>
@@ -178,6 +186,7 @@
       <properties>
         <skipITs>false</skipITs>
         <quarkus.native.enabled>true</quarkus.native.enabled>
+        <quarkus.native.container-build>true</quarkus.native.container-build>
       </properties>
     </profile>
   </profiles>
