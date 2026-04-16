@@ -1,154 +1,269 @@
-# Components
+# System Components
 
-## REST Resources
+## Core Components Overview
 
-### EksAuthResource
+The system consists of four main modules, each with distinct responsibilities in the EKS Pod Identity authentication flow.
 
-Main REST endpoint implementing AWS EKS Auth API.
+## eks-auth-proxy Module
 
-| Property | Value |
-|----------|-------|
-| Path | `/` |
-| Method | POST |
-| Produces | application/json |
-| Consumes | application/json |
+### Primary Components
 
-**Endpoint:** `assumeRoleForPodIdentity(Request)`
+#### EksAuthResource
+- **Purpose**: REST API endpoint for pod identity authentication
+- **Key Method**: `assumeRoleForPodIdentity()`
+- **Responsibilities**:
+  - Handles HTTP POST requests to root path (`/`)
+  - Orchestrates the four-step validation process
+  - Returns AWS temporary credentials
+- **Dependencies**: All service components
 
-Processes AssumeRoleForPodIdentity requests by:
-1. Validating the service account token
-2. Looking up the IAM role association
-3. Assuming the role via AWS STS
-4. Returning temporary credentials
+#### TokenValidationService
+- **Purpose**: Kubernetes service account token validation
+- **Key Methods**: 
+  - `validateToken()`: Validates JWT via TokenReview API
+  - `getSessionTags()`: Extracts metadata for AWS session tags
+- **Responsibilities**:
+  - JWT signature verification (delegated to K8s API)
+  - Audience validation
+  - Claims extraction (namespace, service account, pod info)
+- **Integration**: Kubernetes API server via TokenReview
 
-**Response Codes:**
-- 200: Success
-- 400: Invalid request
-- 403: Access denied
-- 500: Internal error
+#### PodIdentityAssociationService
+- **Purpose**: Role ARN lookup with fallback strategy
+- **Key Methods**:
+  - `getRoleArnForServiceAccount()`: Main lookup orchestrator
+  - `getRoleArnFromCrd()`: Primary CRD-based lookup
+  - `getRoleArnFromConfigMap()`: ConfigMap fallback
+  - `getDefaultRoleArn()`: Generated default fallback
+- **Responsibilities**:
+  - CRD resource querying
+  - ConfigMap pattern matching (supports wildcards)
+  - Default role ARN generation
+- **Integration**: Kubernetes API, AWS EKS API
 
-**Metrics:**
-- `eks_auth_requests_total` - Total requests
-- `eks_auth_request_duration` - Request duration
+#### AwsCredentialService
+- **Purpose**: AWS STS integration for credential generation
+- **Key Methods**:
+  - `assumeRole()`: Main STS AssumeRole operation
+  - `buildSessionTags()`: Creates session metadata
+  - `generateSessionName()`: Creates unique session identifiers
+- **Responsibilities**:
+  - STS AssumeRole API calls
+  - Session tag generation from token claims
+  - Credential response formatting
+- **Integration**: AWS STS service
 
-### HealthResource
+### Supporting Components
 
-Health check endpoints.
+#### EksClientProducer & StsClientProducer
+- **Purpose**: CDI producers for AWS SDK clients
+- **Responsibilities**: AWS client configuration and lifecycle management
 
-| Endpoint | Purpose |
-|----------|---------|
-| `/health/live` | Liveness probe |
-| `/health/ready` | Readiness probe |
+#### Model Classes
+- `AssumeRoleForPodIdentityRequest`: Request DTO
+- `AssumeRoleForPodIdentityResponse`: Response DTO with nested structures
 
-**Response:**
-```json
-{
-  "status": "UP",
-  "check": "liveness|ready"
-}
+## eks-d-auth-cli Module
+
+### Command Structure
+
+```mermaid
+classDiagram
+    class PodIdentityCommand {
+        <<abstract>>
+        +run()
+    }
+    
+    class CreateCommand {
+        +clusterName: String
+        +namespace: String
+        +serviceAccount: String
+        +roleArn: String
+        +run()
+    }
+    
+    class ListCommand {
+        +clusterName: String
+        +namespace: String
+        +run()
+    }
+    
+    class DeleteCommand {
+        +clusterName: String
+        +namespace: String
+        +serviceAccount: String
+        +run()
+    }
+    
+    class DescribeCommand {
+        +clusterName: String
+        +namespace: String
+        +serviceAccount: String
+        +run()
+    }
+    
+    PodIdentityCommand <|-- CreateCommand
+    PodIdentityCommand <|-- ListCommand
+    PodIdentityCommand <|-- DeleteCommand
+    PodIdentityCommand <|-- DescribeCommand
 ```
 
-## Services
+#### CreateCommand
+- **Purpose**: Create new pod identity associations
+- **Parameters**: cluster, namespace, service account, role ARN
+- **Operation**: Creates CRD resource in Kubernetes
 
-### TokenValidationService
+#### ListCommand
+- **Purpose**: List existing associations
+- **Parameters**: cluster name, optional namespace filter
+- **Operation**: Queries CRD resources with filtering
 
-Validates Kubernetes service account JWT tokens.
+#### DeleteCommand
+- **Purpose**: Remove pod identity associations
+- **Parameters**: cluster, namespace, service account
+- **Operation**: Deletes specific CRD resource
 
-**Key Methods:**
-- `validateToken(token, clusterName)` - Validates and extracts claims
-- `getSubject()` - Returns JWT subject
-- `getServiceAccount()` - Returns service account name
-- `getNamespace()` - Returns namespace
+#### DescribeCommand
+- **Purpose**: Show detailed association information
+- **Parameters**: cluster, namespace, service account
+- **Operation**: Retrieves and displays CRD resource details
 
-**Token Claims Extracted:**
-- `kubernetes.io/serviceaccount/namespace`
-- `kubernetes.io/serviceaccount/service-account.name`
-- `sub` (subject)
+#### CliMain
+- **Purpose**: Application entry point
+- **Framework**: PicoCLI integration with Quarkus
+- **Features**: Help generation, version display, command routing
 
-**Note:** For CI/CD use case, tokens are decoded without cryptographic verification.
+## eks-pod-identity-webhook Module
 
-### PodIdentityAssociationService
+### Webhook Components
 
-Maps Kubernetes service accounts to AWS IAM roles.
+#### WebhookEndpoint
+- **Purpose**: Kubernetes admission webhook handler
+- **Key Method**: `mutate()`
+- **Responsibilities**:
+  - Receives admission review requests
+  - Delegates to mutator for pod modifications
+  - Returns admission response with patches
+- **Integration**: Kubernetes admission controller framework
 
-**Key Methods:**
-- `getRoleArnForServiceAccount(cluster, namespace, serviceAccount)` - Lookup role ARN
-- `generateAssociationId(cluster, namespace, serviceAccount)` - Generate unique ID
-- `getDefaultRoleArn(namespace, serviceAccount)` - Generate default role ARN
+#### PodIdentityMutator
+- **Purpose**: Pod specification mutation logic
+- **Key Methods**:
+  - `injectTokenVolume()`: Adds service account token volume
+  - `injectEnvVars()`: Injects AWS credential environment variables
+- **Responsibilities**:
+  - Pod spec modification for EKS Pod Identity compatibility
+  - Environment variable injection
+  - Volume and volume mount configuration
+- **Conditions**: Only mutates pods with associated service accounts
 
-**Configuration:**
-- ConfigMap name: `pod-identity-associations`
-- ConfigMap namespace: `kube-system`
+#### PodIdentityAssociationLookup
+- **Purpose**: Association existence checking
+- **Key Method**: `hasAssociation()`
+- **Responsibilities**:
+  - Determines if pod's service account has identity association
+  - Queries CRD resources
+- **Usage**: Guards mutation logic
 
-**Lookup Priority:**
-1. Exact match: `cluster:namespace:serviceaccount`
-2. Namespace wildcard: `cluster:namespace:*`
-3. Default generated role ARN
+## eks-pod-identity-crd Module
 
-### AwsCredentialService
+### CRD Components
 
-Handles AWS STS operations.
+#### PodIdentityAssociation
+- **Purpose**: Custom resource definition for associations
+- **API Group**: `eks.amazonaws.com/v1`
+- **Scope**: Namespaced
+- **Usage**: Kubernetes custom resource instances
 
-**Key Methods:**
-- `assumeRole(roleArn, sessionName)` - Assume IAM role
-- `generateSessionName(namespace, serviceAccount)` - Generate session name
+#### PodIdentityAssociationSpec
+- **Purpose**: Specification schema for associations
+- **Fields**:
+  - `clusterName`: EKS cluster identifier
+  - `namespace`: Kubernetes namespace
+  - `serviceAccount`: Service account name
+  - `roleArn`: AWS IAM role ARN
+- **Validation**: All fields required
 
-**Configuration:**
-- Session duration: `aws.sts.session-duration` (default: 1 hour)
+## Component Interactions
 
-## Data Models
+### Service Dependencies
 
-### Request Models
+```mermaid
+graph TB
+    subgraph "HTTP Layer"
+        A[EksAuthResource]
+    end
+    
+    subgraph "Business Logic"
+        B[TokenValidationService]
+        C[PodIdentityAssociationService]
+        D[AwsCredentialService]
+    end
+    
+    subgraph "External APIs"
+        E[Kubernetes API]
+        F[AWS EKS API]
+        G[AWS STS API]
+    end
+    
+    subgraph "Data Layer"
+        H[CRD Resources]
+        I[ConfigMap]
+    end
+    
+    A --> B
+    A --> C
+    A --> D
+    
+    B --> E
+    C --> E
+    C --> F
+    C --> H
+    C --> I
+    D --> G
+```
 
-#### AssumeRoleForPodIdentityRequest
+### Cross-Module Dependencies
 
-| Field | Type | JSON Key | Description |
-|-------|------|----------|-------------|
-| clusterName | String | ClusterName | EKS cluster name |
-| token | String | Token | Kubernetes service account JWT |
+```mermaid
+graph LR
+    subgraph "CLI Module"
+        A[eks-d-auth-cli]
+    end
+    
+    subgraph "Webhook Module"
+        B[eks-pod-identity-webhook]
+    end
+    
+    subgraph "Proxy Module"
+        C[eks-auth-proxy]
+    end
+    
+    subgraph "CRD Module"
+        D[eks-pod-identity-crd]
+    end
+    
+    A --> D
+    B --> D
+    C --> D
+```
 
-### Response Models
+## Component Configuration
 
-#### AssumeRoleForPodIdentityResponse
+### Service Configuration
+- **Quarkus Properties**: Application-level settings
+- **Environment Variables**: Runtime configuration
+- **CDI Injection**: Dependency management
+- **Health Checks**: Liveness and readiness probes
 
-| Field | Type | JSON Key | Description |
-|-------|------|----------|-------------|
-| credentials | Credentials | Credentials | AWS temporary credentials |
-| assumedRoleUser | AssumedRoleUser | AssumedRoleUser | Assumed role information |
-| podIdentityAssociation | PodIdentityAssociation | PodIdentityAssociation | Association metadata |
-| subject | Subject | Subject | Token subject information |
-| audience | String | Audience | Token audience |
+### Build Configuration
+- **Maven Modules**: Multi-module project structure
+- **Quarkus Extensions**: Framework capabilities
+- **Native Compilation**: GraalVM configuration for CLI
+- **Container Images**: Jib configuration for Docker builds
 
-#### Nested Models
-
-**Credentials:**
-- accessKeyId, secretAccessKey, sessionToken, expiration
-
-**AssumedRoleUser:**
-- arn, assumeRoleId
-
-**PodIdentityAssociation:**
-- associationId
-
-**Subject:**
-- namespace, serviceAccount
-
-## Configuration
-
-### Application Properties
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| quarkus.http.port | 8080 | HTTP port |
-| eks.pod-identity.configmap.name | pod-identity-associations | ConfigMap name |
-| eks.pod-identity.configmap.namespace | kube-system | ConfigMap namespace |
-| aws.sts.session.duration | PT1H | Session duration |
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| AWS_ACCOUNT_ID | AWS account ID for default role ARN |
-| AWS_ACCESS_KEY_ID | AWS access key |
-| AWS_SECRET_ACCESS_KEY | AWS secret key |
-| AWS_REGION | AWS region (default: us-east-1) |
+### Deployment Configuration
+- **Kubernetes Manifests**: Service and deployment specs
+- **Resource Limits**: Memory and CPU constraints
+- **Security Context**: Pod security settings
+- **Service Accounts**: RBAC and permissions

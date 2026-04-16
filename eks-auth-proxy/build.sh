@@ -18,6 +18,8 @@ BUILD_TYPE="jvm"
 PUSH_IMAGE=false
 IMAGE_TAG="latest"
 REGISTRY=""
+MEMORY_LIMIT="10g"
+CPU_LIMIT="4"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -79,17 +81,11 @@ echo -e "${YELLOW}Running tests...${NC}"
 
 # Build based on type
 if [[ "$BUILD_TYPE" == "native" ]]; then
-    echo -e "${YELLOW}Building native executable...${NC}"
-    ./mvnw package -Dnative -Dquarkus.native.container-build=true
-    
-    echo -e "${YELLOW}Building native Docker image...${NC}"
-    docker build -f src/main/docker/Dockerfile.native -t "$FULL_IMAGE_NAME" .
+    echo -e "${YELLOW}Building native executable with Jib...${NC}"
+    ./mvnw package -Dnative -Dquarkus.container-image.push="$PUSH_IMAGE" -Dquarkus.container-image.tag="$IMAGE_TAG"
 else
-    echo -e "${YELLOW}Building JVM executable...${NC}"
-    ./mvnw package
-    
-    echo -e "${YELLOW}Building JVM Docker image...${NC}"
-    docker build -f src/main/docker/Dockerfile.jvm -t "$FULL_IMAGE_NAME" .
+    echo -e "${YELLOW}Building JVM executable with Jib...${NC}"
+    ./mvnw package -Dquarkus.container-image.push="$PUSH_IMAGE" -Dquarkus.container-image.tag="$IMAGE_TAG"
 fi
 
 # Push image if requested

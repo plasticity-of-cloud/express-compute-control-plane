@@ -1,13 +1,14 @@
 package com.plcloud.eksauth.service;
 
 import software.amazon.awssdk.services.eks.EksClient;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
-import jakarta.inject.Singleton;
 
+@ApplicationScoped
 public class EksClientProducer {
 
     @Produces
-    @Singleton
+    @ApplicationScoped
     public EksClient createEksClient() {
         return EksClient.builder().build();
     }

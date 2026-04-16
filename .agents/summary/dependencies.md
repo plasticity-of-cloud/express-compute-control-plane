@@ -1,97 +1,339 @@
-# Dependencies
+# Dependencies and External Integrations
 
-## Build Dependencies
+## Core Framework Dependencies
 
-### Maven Dependencies
+### Quarkus Framework (3.20.3)
+**Purpose**: Primary application framework for all modules
+**Key Extensions**:
+- `quarkus-resteasy-reactive`: REST API endpoints
+- `quarkus-resteasy-reactive-jackson`: JSON serialization
+- `quarkus-kubernetes-client`: Kubernetes API integration
+- `quarkus-container-image-jib`: Container image building
+- `quarkus-picocli`: CLI framework (eks-d-auth-cli only)
+- `quarkus-smallrye-health`: Health check endpoints
+- `quarkus-micrometer-registry-prometheus`: Metrics export
 
-| Group | Artifact | Version | Purpose |
-|-------|----------|---------|---------|
-| io.quarkus | quarkus-rest-jackson | - | REST API with Jackson |
-| io.quarkus | quarkus-smallrye-health | - | Health checks |
-| io.quarkus | quarkus-micrometer-registry-prometheus | - | Prometheus metrics |
-| io.quarkus | quarkus-smallrye-openapi | - | OpenAPI documentation |
-| io.fabric8 | kubernetes-client | 6.13.4 | Kubernetes API client |
-| software.amazon.awssdk | sts | 2.28.17 | AWS STS SDK |
-| software.amazon.awssdk | auth | 2.28.17 | AWS authentication |
-| com.auth0 | java-jwt | 4.4.0 | JWT token handling |
-| io.quarkus | quarkus-junit5 | - | Testing framework |
-| io.rest-assured | rest-assured | - | REST API testing |
+**Configuration**: 
+- Native compilation support via GraalVM
+- Dependency injection via CDI
+- Configuration via application.properties
 
-### Quarkus Platform
+### Build System Dependencies
 
-| Property | Value |
-|----------|-------|
-| Group ID | io.quarkus.platform |
-| Artifact ID | quarkus-bom |
-| Version | 3.15.1 |
+#### Maven (3.8+)
+**Purpose**: Multi-module project build system
+**Key Plugins**:
+- `quarkus-maven-plugin`: Quarkus application lifecycle
+- `maven-compiler-plugin`: Java compilation
+- `maven-surefire-plugin`: Unit test execution
+- `jib-maven-plugin`: Container image building (via Quarkus)
 
-## External Services
+#### GraalVM Native Image
+**Purpose**: Native compilation for CLI tool
+**Configuration**:
+- Container-based builds via `quarkus.native.container-build=true`
+- Builder image: `quay.io/quarkus/ubi-quarkus-graalvmce-builder-image:jdk-21`
+- Resource limits: 10GB memory, 4 CPU cores
+- Runtime initialization fixes for Kubernetes client
 
-### Kubernetes API
+## AWS SDK Dependencies
 
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| Kubernetes Client | 6.13.4 | ConfigMap access |
+### AWS SDK for Java v2
+**Purpose**: AWS service integration
+**Key Modules**:
+- `software.amazon.awssdk:eks`: EKS API client
+- `software.amazon.awssdk:sts`: Security Token Service client
+- `software.amazon.awssdk:iam`: IAM operations (test only)
 
-**Usage:**
-- Read pod identity associations ConfigMap
-- Trust certificates enabled
+**Configuration**:
+```java
+@ApplicationScoped
+public class EksClientProducer {
+    @Produces
+    @ApplicationScoped
+    public EksClient createEksClient() {
+        return EksClient.builder()
+            .region(Region.of(System.getenv("AWS_REGION")))
+            .build();
+    }
+}
+```
+
+**Authentication Methods**:
+- Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+- IAM roles (when running on EC2)
+- AWS credential profiles
+- Default credential provider chain
+
+### Required AWS Permissions
+
+**For eks-auth-proxy service**:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "eks:ListPodIdentityAssociations",
+        "eks:DescribePodIdentityAssociation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::*:role/eks-pod-identity-*"
+    }
+  ]
+}
+```
+
+**For integration tests**:
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "iam:CreateRole",
+    "iam:DeleteRole",
+    "iam:AttachRolePolicy",
+    "iam:DetachRolePolicy",
+    "eks:CreatePodIdentityAssociation",
+    "eks:DeletePodIdentityAssociation"
+  ],
+  "Resource": "*"
+}
+```
+
+## Kubernetes Integration Dependencies
+
+### Fabric8 Kubernetes Client (6.13.4)
+**Purpose**: Kubernetes API interactions
+**Key Features**:
+- Custom Resource Definition (CRD) support
+- TokenReview API for JWT validation
+- ConfigMap operations for fallback configuration
+- Admission webhook support
+
+**Configuration**:
+```properties
+quarkus.kubernetes-client.trust-certs=true
+quarkus.kubernetes-client.connection-timeout=10s
+quarkus.kubernetes-client.request-timeout=30s
+```
+
+**Native Compilation Fix**:
+```properties
+quarkus.native.additional-build-args=--initialize-at-run-time=io.fabric8.kubernetes.client.impl.KubernetesClientImpl
+```
+
+### Required Kubernetes Permissions
+
+**RBAC for eks-auth-proxy**:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eks-auth-proxy
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list"]
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["eks.amazonaws.com"]
+  resources: ["podidentityassociations"]
+  verbs: ["get", "list", "watch"]
+```
+
+**RBAC for eks-d-auth-cli**:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: eks-d-auth-cli
+rules:
+- apiGroups: ["eks.amazonaws.com"]
+  resources: ["podidentityassociations"]
+  verbs: ["get", "list", "create", "update", "delete"]
+```
+
+## Container and Deployment Dependencies
+
+### Docker/Podman
+**Purpose**: Container runtime for builds and deployment
+**Requirements**:
+- Docker API compatible runtime
+- Support for multi-stage builds
+- Registry authentication for image pushing
+
+### Jib Integration
+**Purpose**: Container image building without Docker daemon
+**Configuration**:
+```properties
+quarkus.container-image.build=true
+quarkus.container-image.group=plcloud
+quarkus.jib.base-jvm-image=registry.access.redhat.com/ubi8/openjdk-21:1.20
+quarkus.jib.base-native-image=quay.io/quarkus/quarkus-distroless-image:2.0
+```
+
+### Base Images
+- **JVM builds**: `registry.access.redhat.com/ubi8/openjdk-21:1.20`
+- **Native builds**: `quay.io/quarkus/quarkus-distroless-image:2.0`
+- **Builder image**: `quay.io/quarkus/ubi-quarkus-graalvmce-builder-image:jdk-21`
+
+## Testing Dependencies
+
+### Unit Testing
+- **JUnit 5**: Primary testing framework
+- **Mockito**: Mocking framework
+- **AssertJ**: Fluent assertions
+- **System Stubs**: Environment variable manipulation
+
+### Integration Testing
+- **WireMock**: HTTP service mocking
+- **Testcontainers**: Container-based testing (if needed)
+- **Fabric8 Kubernetes Mock Server**: Kubernetes API mocking
+
+**Test Configuration**:
+```java
+@QuarkusTest
+class ServiceTest {
+    @InjectMock
+    KubernetesClient kubernetesClient;
+    
+    @InjectMock
+    EksClient eksClient;
+}
+```
+
+### Test Profiles
+- **Unit tests**: No external dependencies
+- **Integration tests**: Real AWS resources (conditional)
+- **Full flow tests**: Real tokens and clusters (conditional)
+
+## External Service Dependencies
+
+### Kubernetes API Server
+**Purpose**: Core platform integration
+**Requirements**:
+- TokenReview API support
+- Custom Resource Definition support
+- Admission webhook support (for webhook module)
+- OIDC/JWT issuer capabilities
+
+**Endpoints Used**:
+- `POST /api/v1/tokenreviews`: Token validation
+- `GET /apis/eks.amazonaws.com/v1/podidentityassociations`: CRD queries
+- `GET /api/v1/namespaces/{ns}/configmaps/{name}`: ConfigMap fallback
+- `GET /openid/v1/jwks`: JWT public key discovery
 
 ### AWS Services
 
-| Service | SDK | Purpose |
-|---------|-----|---------|
-| STS | 2.28.17 | AssumeRole operations |
-| Auth | 2.28.17 | AWS authentication |
+#### AWS STS (Security Token Service)
+**Purpose**: Temporary credential generation
+**API Operations**:
+- `AssumeRole`: Primary credential generation
+- `GetCallerIdentity`: Identity verification (testing)
 
-## Build Tools
+**Configuration**:
+```properties
+aws.sts.session-duration=PT1H
+```
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Maven | 3.8+ | Build and dependency management |
-| Java | 21 | Runtime and compilation |
-| Docker | Latest | Container builds |
+#### AWS EKS (Elastic Kubernetes Service)
+**Purpose**: Pod identity association lookup (fallback to local CRDs)
+**API Operations**:
+- `ListPodIdentityAssociations`: Association discovery
+- `DescribePodIdentityAssociation`: Association details
 
-## Native Build Dependencies
+**Usage**: Optional - system works without EKS API access
 
-| Component | Image | Purpose |
-|-----------|-------|---------|
-| GraalVM | quay.io/quarkus/ubi-quarkus-graalvmce-builder-image:jdk-21 | Native compilation |
+### Certificate Management
 
-## Configuration Dependencies
+#### cert-manager (Optional)
+**Purpose**: TLS certificate management for admission webhooks
+**Requirements**:
+- cert-manager CRDs installed
+- Issuer configuration for webhook certificates
+- Automatic certificate renewal
 
-### Environment Variables
+**Configuration**:
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: eks-pod-identity-webhook-cert
+spec:
+  secretName: eks-pod-identity-webhook-tls
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+  dnsNames:
+  - eks-pod-identity-webhook.kube-system.svc
+```
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| AWS_ACCOUNT_ID | No | Default role ARN generation |
-| AWS_ACCESS_KEY_ID | Yes | AWS STS operations |
-| AWS_SECRET_ACCESS_KEY | Yes | AWS STS operations |
-| AWS_REGION | No | AWS region (default: us-east-1) |
+## Development Dependencies
 
-### ConfigMap
+### IDE Support
+- **Language Server Protocol**: Java language server
+- **Quarkus Tools**: IDE extensions for Quarkus development
+- **Maven Integration**: Build system integration
 
-| Name | Namespace | Required | Purpose |
-|------|-----------|----------|---------|
-| pod-identity-associations | kube-system | Yes | Role associations |
+### Code Quality Tools
+- **Maven Checkstyle**: Code style enforcement
+- **SpotBugs**: Static analysis
+- **JaCoCo**: Code coverage (if configured)
 
-## Test Dependencies
+### Local Development
+- **Quarkus Dev Mode**: Hot reload development
+- **Docker Compose**: Local service orchestration (if needed)
+- **Kind/k3s/minikube**: Local Kubernetes clusters
 
-| Group | Artifact | Purpose |
-|-------|----------|---------|
-| io.quarkus | quarkus-junit5 | JUnit 5 support |
-| io.rest-assured | rest-assured | REST API testing |
+## Deployment Environment Dependencies
 
-## Dependency Management
+### Kubernetes Cluster Requirements
+- **Version**: 1.20+ (for stable CRD support)
+- **RBAC**: Enabled for service account permissions
+- **Admission Controllers**: MutatingAdmissionWebhook enabled
+- **Service Account Token Projection**: For JWT token generation
 
-### Dependency Exclusions
+### Network Requirements
+- **Egress to AWS APIs**: For STS and EKS API calls
+- **Ingress from Pods**: For authentication requests
+- **Internal DNS**: For service discovery within cluster
 
-None - all dependencies use default versions from Quarkus BOM.
+### Storage Requirements
+- **ConfigMaps**: For fallback configuration
+- **Secrets**: For AWS credentials (if not using IAM roles)
+- **CRD Storage**: For pod identity association resources
 
-### Transitive Dependencies
+## Version Compatibility Matrix
 
-Key transitive dependencies:
-- Jackson (JSON processing)
-- Netty (HTTP client)
-- SmallRye (Reactive messaging)
-- MicroProfile (API standards)
+| Component | Minimum Version | Tested Version | Notes |
+|-----------|----------------|----------------|-------|
+| Java | 21 | 21.0.2 | Required for Quarkus 3.x |
+| Maven | 3.8 | 3.9.x | Multi-module support |
+| Kubernetes | 1.20 | 1.28+ | CRD and admission webhook support |
+| Docker | 20.10 | 24.x | For container builds |
+| AWS CLI | 2.0 | 2.15+ | For ECR authentication |
+
+## Optional Dependencies
+
+### Monitoring Stack
+- **Prometheus**: Metrics collection
+- **Grafana**: Metrics visualization
+- **AlertManager**: Alert routing
+
+### Logging Stack
+- **Fluentd/Fluent Bit**: Log collection
+- **Elasticsearch**: Log storage
+- **Kibana**: Log visualization
+
+### Service Mesh (Optional)
+- **Istio**: Service mesh integration
+- **Linkerd**: Alternative service mesh
+- **Consul Connect**: HashiCorp service mesh
+
+These optional dependencies can enhance observability and security but are not required for core functionality.

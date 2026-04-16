@@ -11,7 +11,7 @@
   <properties>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <skipITs>true</skipITs>
-    <aws.sdk.version>2.28.17</aws.sdk.version>
+    <aws.sdk.version>2.29.15</aws.sdk.version>
     <fabric8.version>6.13.4</fabric8.version>
   </properties>
   <dependencyManagement>
@@ -20,6 +20,13 @@
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>${quarkus.platform.artifact-id}</artifactId>
         <version>${quarkus.platform.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws.sdk.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -54,17 +61,36 @@
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>sts</artifactId>
-      <version>${aws.sdk.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>apache-client</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>eks</artifactId>
-      <version>${aws.sdk.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>apache-client</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>auth</artifactId>
-      <version>${aws.sdk.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>apache-client</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>aws-crt-client</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -88,7 +114,6 @@
     <dependency>
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>iam</artifactId>
-      <version>${aws.sdk.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -187,6 +212,15 @@
         <skipITs>false</skipITs>
         <quarkus.native.enabled>true</quarkus.native.enabled>
         <quarkus.native.container-build>true</quarkus.native.container-build>
+      </properties>
+    </profile>
+    <profile>
+      <id>production</id>
+      <properties>
+        <quarkus.log.level>WARN</quarkus.log.level>
+        <quarkus.swagger-ui.always-include>false</quarkus.swagger-ui.always-include>
+        <quarkus.smallrye-openapi.store-schema-directory>target</quarkus.smallrye-openapi.store-schema-directory>
+        <quarkus.http.access-log.enabled>true</quarkus.http.access-log.enabled>
       </properties>
     </profile>
   </profiles>

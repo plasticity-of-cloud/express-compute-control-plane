@@ -119,9 +119,13 @@ _build() {
     local native_flag=""
     [[ "$BUILD_TYPE" == "native" ]] && native_flag="-Pnative"
 
+    # Set resource limits for build process
+    export MAVEN_OPTS="-Xmx10g"
+    
     $MVN -pl "$modules" package $native_flag -DskipTests \
         -Dquarkus.container-image.build=true \
         -Dquarkus.container-image.image="$img" \
+        -Dquarkus.jib.jvm-arguments=-Xmx8g \
         ${PUSH:+-Dquarkus.container-image.push=true}
 }
 
@@ -134,9 +138,16 @@ build_proxy() {
 
 build_cli() {
     local img; img=$(image_name "eks-d-auth-cli")
-    echo -e "${YELLOW}Building eks-d-auth-cli ($BUILD_TYPE)...${NC}"
-    _build "eks-pod-identity-crd,eks-d-auth-cli" "$img"
-    echo -e "${GREEN}cli image: $img${NC}"
+    echo -e "${YELLOW}Building eks-d-auth-cli (native for CLI tool)...${NC}"
+    
+    # Force native build for CLI tool regardless of BUILD_TYPE
+    export MAVEN_OPTS="-Xmx10g"
+    
+    $MVN -pl "eks-pod-identity-crd,eks-d-auth-cli" package -Pnative -DskipTests \
+        -Dquarkus.container-image.build=true \
+        -Dquarkus.container-image.image="$img"
+    
+    echo -e "${GREEN}cli image (native): $img${NC}"
 }
 
 build_webhook() {

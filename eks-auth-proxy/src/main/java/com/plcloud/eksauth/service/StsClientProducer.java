@@ -3,12 +3,12 @@ package com.plcloud.eksauth.service;
 import software.amazon.awssdk.services.sts.StsClient;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
-import jakarta.inject.Singleton;
 
+@ApplicationScoped
 public class StsClientProducer {
     
     @Produces
-    @Singleton
+    @ApplicationScoped
     public StsClient createStsClient() {
         return StsClient.builder().build();
     }
