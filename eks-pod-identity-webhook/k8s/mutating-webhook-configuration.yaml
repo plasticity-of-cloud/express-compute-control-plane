@@ -17,7 +17,7 @@ webhooks:
         namespace: kube-system
         name: eks-pod-identity-webhook
         path: /mutate
-        port: 443
+        port: 8443
     admissionReviewVersions: ["v1"]
     sideEffects: None
     timeoutSeconds: 5
