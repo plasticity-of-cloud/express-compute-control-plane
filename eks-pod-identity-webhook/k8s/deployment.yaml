@@ -9,7 +9,7 @@ kind: ClusterRole
 metadata:
   name: eks-pod-identity-webhook
 rules:
-- apiGroups: ["eks.amazonaws.com"]
+- apiGroups: ["eks.plasticity.cloud"]
   resources: ["podidentityassociations"]
   verbs: ["get", "list", "watch"]
 ---

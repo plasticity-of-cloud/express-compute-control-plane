@@ -12,7 +12,7 @@ rules:
 - apiGroups: ["authentication.k8s.io"]
   resources: ["tokenreviews"]
   verbs: ["create"]
-- apiGroups: ["eks.amazonaws.com"]
+- apiGroups: ["eks.plasticity.cloud"]
   resources: ["podidentityassociations"]
   verbs: ["get", "list", "watch"]
 ---
