@@ -28,10 +28,18 @@ spec:
             properties:
               clusterName:
                 type: string
+                description: "EKS cluster name"
               namespace:
                 type: string
+                description: "Kubernetes namespace"
               serviceAccount:
                 type: string
+                description: "Service account name"
               roleArn:
                 type: string
-            required: [clusterName, namespace, serviceAccount, roleArn]
+                description: "IAM role ARN to assume"
+            required:
+            - clusterName
+            - namespace
+            - serviceAccount
+            - roleArn

@@ -109,6 +109,11 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-kubernetes</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.quarkiverse.helm</groupId>
+      <artifactId>quarkus-helm</artifactId>
+      <version>1.4.0</version>
+    </dependency>
 
     <!-- Test -->
     <dependency>
