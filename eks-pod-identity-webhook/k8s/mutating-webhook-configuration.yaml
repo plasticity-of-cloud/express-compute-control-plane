@@ -5,7 +5,7 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: kube-system/eks-pod-identity-webhook-cert
 webhooks:
-  - name: pod-identity.eks.amazonaws.com
+  - name: pod-identity.plcloud.com
     rules:
       - apiGroups:   [""]
         apiVersions: ["v1"]
