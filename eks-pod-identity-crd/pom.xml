@@ -9,7 +9,7 @@
     <version>1.0.0-SNAPSHOT</version>
   </parent>
   <artifactId>eks-pod-identity-crd</artifactId>
-  <description>Shared CRD model for PodIdentityAssociation</description>
+  <description>DEPRECATED — Shared CRD model for PodIdentityAssociation. Use eks-dx-lambda DynamoDB-backed associations instead.</description>
 
   <properties>
     <fabric8.version>6.13.4</fabric8.version>

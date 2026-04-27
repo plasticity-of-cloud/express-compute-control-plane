@@ -9,7 +9,7 @@
     <version>1.0.0-SNAPSHOT</version>
   </parent>
   <artifactId>eks-d-auth-cli</artifactId>
-  <description>CLI tool for managing EKS Pod Identity Associations via CRDs</description>
+  <description>DEPRECATED — CLI tool for managing EKS Pod Identity Associations via CRDs. Use eks-dx-cli instead.</description>
 
   <dependencyManagement>
     <dependencies>

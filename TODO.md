@@ -83,7 +83,7 @@
 
 ## Deprecation
 
-- [ ] Mark eks-pod-identity-crd as deprecated in pom.xml
-- [ ] Mark eks-d-auth-cli as deprecated in pom.xml
+- [x] Mark eks-pod-identity-crd as deprecated in pom.xml
+- [x] Mark eks-d-auth-cli as deprecated in pom.xml
 - [ ] Update CI/release workflows for new module structure
 - [ ] Remove old modules after migration is validated
