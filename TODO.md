@@ -50,22 +50,22 @@
 
 ## eks-auth-proxy (Simplified in-cluster proxy)
 
-- [ ] Remove STS, DynamoDB, CRD dependencies
-- [ ] Remove EksClientProducer, PodIdentityAssociationService (CRD-based)
-- [ ] Add JDK HttpClient forward to Lambda endpoint
-- [ ] Add `EKS_DX_ENDPOINT` env var configuration
-- [ ] TokenReview stays as fast-fail
-- [ ] Update Helm chart (quarkus-helm) — remove unused volumes/secrets
-- [ ] Update tests
+- [x] Remove STS, DynamoDB, CRD dependencies
+- [x] Remove EksClientProducer, PodIdentityAssociationService (CRD-based)
+- [x] Add JDK HttpClient forward to Lambda endpoint
+- [x] Add `EKS_DX_ENDPOINT` env var configuration
+- [x] TokenReview stays as fast-fail
+- [x] Update Helm chart (quarkus-helm) — remove unused volumes/secrets
+- [x] Update tests
 
 ## eks-pod-identity-webhook (Modified)
 
-- [ ] Replace CRD-based PodIdentityAssociationLookup with Lambda API call
-- [ ] Add projected SA token volume (audience: eks-dx.plasticity.cloud)
-- [ ] Add JDK HttpClient for Lambda API
-- [ ] Remove Fabric8 CRD dependency
-- [ ] Update Helm chart — add projected token volume, EKS_DX_ENDPOINT env
-- [ ] Update tests
+- [x] Replace CRD-based PodIdentityAssociationLookup with Lambda API call
+- [x] Add projected SA token volume (audience: eks-dx.plasticity.cloud)
+- [x] Add JDK HttpClient for Lambda API
+- [x] Remove Fabric8 CRD dependency
+- [x] Update Helm chart — add projected token volume, EKS_DX_ENDPOINT env
+- [x] Update tests
 
 ## Infrastructure
 
