@@ -1,24 +1,23 @@
 package cloud.plasticity.eksdx.lambda.service;
 
 import cloud.plasticity.eksdx.lambda.model.TokenClaims;
+import io.smallrye.jwt.auth.principal.JWTAuthContextInfo;
+import io.smallrye.jwt.auth.principal.JWTParser;
+import io.smallrye.jwt.auth.principal.ParseException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.logging.Logger;
-import org.jose4j.jwk.JsonWebKeySet;
-import org.jose4j.jwt.JwtClaims;
-import org.jose4j.jwt.MalformedClaimException;
-import org.jose4j.jwt.consumer.JwtConsumer;
-import org.jose4j.jwt.consumer.JwtConsumerBuilder;
-import org.jose4j.jwt.consumer.InvalidJwtException;
-import org.jose4j.keys.resolvers.JwksVerificationKeyResolver;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Validates Kubernetes SA tokens using JWKS stored in DynamoDB.
- * JWKS is cached in memory with a 5-minute TTL.
+ * Uses SmallRye JWT's {@link JWTParser} with per-cluster {@link JWTAuthContextInfo}
+ * for JWKS resolution. JWKS is cached in memory with a 5-minute TTL.
  */
 @ApplicationScoped
 public class JwksTokenValidationService {
@@ -31,109 +30,87 @@ public class JwksTokenValidationService {
     @Inject
     DynamoDbClusterService clusterService;
 
-    private final Map<String, CachedJwks> jwksCache = new ConcurrentHashMap<>();
+    @Inject
+    JWTParser jwtParser;
+
+    private final Map<String, CachedContext> contextCache = new ConcurrentHashMap<>();
 
     /**
      * Validate a pod SA token for credential exchange.
      * Audience: pods.eks.amazonaws.com
      */
     public TokenClaims validateToken(String token, String clusterName) {
-        JwtClaims claims = validateJwt(token, clusterName, EKS_POD_IDENTITY_AUDIENCE);
-        return extractTokenClaims(claims);
+        JsonWebToken jwt = validateJwt(token, clusterName, EKS_POD_IDENTITY_AUDIENCE);
+        return extractTokenClaims(jwt);
     }
 
     /**
      * Validate a webhook SA token for management API access.
      * Audience: eks-dx.plasticity.cloud
-     * Subject must be the webhook service account.
      */
     public void validateWebhookToken(String token, String clusterName, String expectedSubject) {
-        JwtClaims claims = validateJwt(token, clusterName, EKS_DX_AUDIENCE);
-        try {
-            String subject = claims.getSubject();
-            if (!expectedSubject.equals(subject)) {
-                throw new SecurityException("Unexpected subject: " + subject);
-            }
-        } catch (MalformedClaimException e) {
-            throw new SecurityException("Missing subject claim", e);
+        JsonWebToken jwt = validateJwt(token, clusterName, EKS_DX_AUDIENCE);
+        String subject = jwt.getSubject();
+        if (!expectedSubject.equals(subject)) {
+            throw new SecurityException("Unexpected subject: " + subject);
         }
     }
 
-    private JwtClaims validateJwt(String token, String clusterName, String expectedAudience) {
+    private JsonWebToken validateJwt(String token, String clusterName, String expectedAudience) {
         if (token.startsWith("Bearer ")) {
             token = token.substring(7);
         }
 
-        JsonWebKeySet jwks = getJwks(clusterName);
-        String issuer = clusterService.getIssuer(clusterName);
+        JWTAuthContextInfo contextInfo = getContextInfo(clusterName, expectedAudience);
 
         try {
-            JwtConsumer consumer = new JwtConsumerBuilder()
-                .setVerificationKeyResolver(new JwksVerificationKeyResolver(jwks.getJsonWebKeys()))
-                .setExpectedAudience(expectedAudience)
-                .setExpectedIssuer(issuer)
-                .setRequireExpirationTime()
-                .setRequireSubject()
-                .build();
-
-            return consumer.processToClaims(token);
-        } catch (InvalidJwtException e) {
+            return jwtParser.parse(token, contextInfo);
+        } catch (ParseException e) {
             LOG.warnf("JWT validation failed for cluster %s: %s", clusterName, e.getMessage());
             throw new IllegalArgumentException("Invalid token: " + e.getMessage(), e);
         }
     }
 
-    private TokenClaims extractTokenClaims(JwtClaims claims) {
-        try {
-            String subject = claims.getSubject();
-            // subject = "system:serviceaccount:<namespace>:<serviceAccount>"
-            String[] parts = subject.split(":");
-            if (parts.length != 4 || !"system".equals(parts[0]) || !"serviceaccount".equals(parts[1])) {
-                throw new IllegalArgumentException("Unexpected subject format: " + subject);
-            }
-
-            String namespace = parts[2];
-            String serviceAccount = parts[3];
-
-            // Optional claims — may not be present depending on K8s version
-            String podName = getStringClaim(claims, "kubernetes.io/pod/name");
-            String podUid = getStringClaim(claims, "kubernetes.io/pod/uid");
-            String saUid = getStringClaim(claims, "kubernetes.io/serviceaccount/uid");
-
-            LOG.infof("Token validated: %s/%s (pod: %s)", namespace, serviceAccount, podName);
-
-            return new TokenClaims(namespace, serviceAccount, saUid, podName, podUid, subject);
-        } catch (MalformedClaimException e) {
-            throw new IllegalArgumentException("Failed to extract claims: " + e.getMessage(), e);
-        }
-    }
-
-    private String getStringClaim(JwtClaims claims, String name) {
-        try {
-            return claims.getStringClaimValue(name);
-        } catch (MalformedClaimException e) {
-            return null;
-        }
-    }
-
-    private JsonWebKeySet getJwks(String clusterName) {
-        CachedJwks cached = jwksCache.get(clusterName);
+    private JWTAuthContextInfo getContextInfo(String clusterName, String audience) {
+        String cacheKey = clusterName + "|" + audience;
+        CachedContext cached = contextCache.get(cacheKey);
         if (cached != null && !cached.isExpired()) {
-            return cached.jwks;
+            return cached.contextInfo;
         }
 
         String jwksJson = clusterService.getJwks(clusterName);
-        try {
-            JsonWebKeySet jwks = new JsonWebKeySet(jwksJson);
-            jwksCache.put(clusterName, new CachedJwks(jwks, Instant.now()));
-            LOG.infof("JWKS loaded for cluster %s (%d keys)", clusterName, jwks.getJsonWebKeys().size());
-            return jwks;
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to parse JWKS for cluster " + clusterName, e);
-        }
+        String issuer = clusterService.getIssuer(clusterName);
+
+        JWTAuthContextInfo contextInfo = new JWTAuthContextInfo();
+        contextInfo.setPublicKeyContent(jwksJson);
+        contextInfo.setIssuedBy(issuer);
+        contextInfo.setExpectedAudience(Set.of(audience));
+        contextInfo.setRequireNamedPrincipal(true);
+
+        contextCache.put(cacheKey, new CachedContext(contextInfo, Instant.now()));
+        LOG.infof("JWKS context loaded for cluster %s (audience: %s)", clusterName, audience);
+        return contextInfo;
     }
 
-    private record CachedJwks(JsonWebKeySet jwks, Instant loadedAt) {
+    private TokenClaims extractTokenClaims(JsonWebToken jwt) {
+        String subject = jwt.getSubject();
+        String[] parts = subject.split(":");
+        if (parts.length != 4 || !"system".equals(parts[0]) || !"serviceaccount".equals(parts[1])) {
+            throw new IllegalArgumentException("Unexpected subject format: " + subject);
+        }
+
+        String namespace = parts[2];
+        String serviceAccount = parts[3];
+
+        String podName = jwt.getClaim("kubernetes.io/pod/name");
+        String podUid = jwt.getClaim("kubernetes.io/pod/uid");
+        String saUid = jwt.getClaim("kubernetes.io/serviceaccount/uid");
+
+        LOG.infof("Token validated: %s/%s (pod: %s)", namespace, serviceAccount, podName);
+        return new TokenClaims(namespace, serviceAccount, saUid, podName, podUid, subject);
+    }
+
+    private record CachedContext(JWTAuthContextInfo contextInfo, Instant loadedAt) {
         boolean isExpired() {
             return Instant.now().isAfter(loadedAt.plusSeconds(JWKS_CACHE_TTL_SECONDS));
         }

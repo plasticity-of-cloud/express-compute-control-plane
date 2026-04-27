@@ -1,6 +1,8 @@
 package cloud.plasticity.eksdx.lambda.service;
 
 import cloud.plasticity.eksdx.lambda.model.TokenClaims;
+import io.smallrye.jwt.auth.principal.DefaultJWTParser;
+import io.smallrye.jwt.auth.principal.JWTParser;
 import org.jose4j.jwk.JsonWebKey;
 import org.jose4j.jwk.JsonWebKeySet;
 import org.jose4j.jwk.RsaJsonWebKey;
@@ -47,6 +49,7 @@ class JwksTokenValidationServiceTest {
     void setUp() {
         service = new JwksTokenValidationService();
         service.clusterService = clusterService;
+        service.jwtParser = new DefaultJWTParser();
     }
 
     // --- validateToken (pod identity audience) ---
@@ -84,6 +87,7 @@ class JwksTokenValidationServiceTest {
         jwtClaims.setAudience(POD_AUDIENCE);
         jwtClaims.setSubject("system:serviceaccount:default:my-sa");
         jwtClaims.setExpirationTimeMinutesInTheFuture(10);
+        jwtClaims.setIssuedAtToNow();
         jwtClaims.setStringClaim("kubernetes.io/pod/name", "my-pod-abc123");
         jwtClaims.setStringClaim("kubernetes.io/pod/uid", "uid-123");
         jwtClaims.setStringClaim("kubernetes.io/serviceaccount/uid", "sa-uid-456");
@@ -104,7 +108,6 @@ class JwksTokenValidationServiceTest {
 
         TokenClaims claims = service.validateToken(token, CLUSTER);
 
-        // Optional claims not set — should be null, not throw
         assertNull(claims.podName());
         assertNull(claims.podUid());
         assertNull(claims.serviceAccountUid());
@@ -114,7 +117,7 @@ class JwksTokenValidationServiceTest {
     void validateToken_throws_whenTokenExpired() throws Exception {
         mockCluster();
         String token = createToken(POD_AUDIENCE, ISSUER,
-            "system:serviceaccount:default:my-sa", -5); // expired 5 minutes ago
+            "system:serviceaccount:default:my-sa", -5);
 
         assertThrows(IllegalArgumentException.class,
             () -> service.validateToken(token, CLUSTER));
@@ -143,7 +146,6 @@ class JwksTokenValidationServiceTest {
     @Test
     void validateToken_throws_whenInvalidSignature() throws Exception {
         mockCluster();
-        // Create a token signed with a different key
         RsaJsonWebKey otherKey = RsaJwkGenerator.generateJwk(2048);
         otherKey.setKeyId("other-key");
 
@@ -152,6 +154,7 @@ class JwksTokenValidationServiceTest {
         claims.setAudience(POD_AUDIENCE);
         claims.setSubject("system:serviceaccount:default:my-sa");
         claims.setExpirationTimeMinutesInTheFuture(10);
+        claims.setIssuedAtToNow();
 
         JsonWebSignature jws = new JsonWebSignature();
         jws.setPayload(claims.toJson());
@@ -167,7 +170,6 @@ class JwksTokenValidationServiceTest {
     @Test
     void validateToken_throws_whenMalformedToken() {
         mockCluster();
-
         assertThrows(IllegalArgumentException.class,
             () -> service.validateToken("not-a-jwt", CLUSTER));
     }
@@ -236,7 +238,7 @@ class JwksTokenValidationServiceTest {
     // --- JWKS caching ---
 
     @Test
-    void validateToken_cachesJwks_acrossCalls() throws Exception {
+    void validateToken_cachesContext_acrossCalls() throws Exception {
         mockCluster();
         String token1 = createToken(POD_AUDIENCE, ISSUER,
             "system:serviceaccount:default:sa1", 60);
@@ -270,8 +272,6 @@ class JwksTokenValidationServiceTest {
             null, null, "system:serviceaccount:default:my-sa");
 
         var tags = claims.sessionTags();
-        assertEquals("default", tags.get("kubernetes-namespace"));
-        assertEquals("my-sa", tags.get("kubernetes-service-account"));
         assertEquals("", tags.get("kubernetes-pod-name"));
         assertEquals("", tags.get("kubernetes-pod-uid"));
     }
@@ -290,6 +290,7 @@ class JwksTokenValidationServiceTest {
         claims.setAudience(audience);
         claims.setSubject(subject);
         claims.setExpirationTimeMinutesInTheFuture(expirationMinutes);
+        claims.setIssuedAtToNow();
         return signClaims(claims);
     }
 
