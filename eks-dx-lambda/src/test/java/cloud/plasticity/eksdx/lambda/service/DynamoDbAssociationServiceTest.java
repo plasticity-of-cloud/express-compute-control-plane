@@ -137,6 +137,7 @@ class DynamoDbAssociationServiceTest {
 
     @Test
     void createAssociation_throws_whenDuplicate() {
+        mockRoleExists();
         mockGetItem(Map.of(
             "PK", AttributeValue.fromS("CLUSTER#test-cluster"),
             "SK", AttributeValue.fromS("default#my-sa"),
@@ -377,6 +378,64 @@ class DynamoDbAssociationServiceTest {
         assertEquals("my-role", captor.getValue().roleName());
     }
 
+    @Test
+    void validateRoleExists_throws_whenTrustPolicyEmpty() {
+        when(iamClient.getRole(any(GetRoleRequest.class)))
+            .thenReturn(GetRoleResponse.builder()
+                .role(Role.builder().roleName("r").arn("arn:aws:iam::123:role/r")
+                    .assumeRolePolicyDocument("").build())
+                .build());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+            () -> service.validateRoleExists("arn:aws:iam::123:role/r"));
+        assertTrue(ex.getMessage().contains("trust policy is empty"));
+    }
+
+    @Test
+    void validateRoleExists_throws_whenTrustPolicyMissingAssumeRole() {
+        // Trust policy that only allows lambda:InvokeFunction, not sts:AssumeRole
+        String policy = java.net.URLEncoder.encode(
+            "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"lambda:InvokeFunction\"}]}",
+            java.nio.charset.StandardCharsets.UTF_8);
+        when(iamClient.getRole(any(GetRoleRequest.class)))
+            .thenReturn(GetRoleResponse.builder()
+                .role(Role.builder().roleName("r").arn("arn:aws:iam::123:role/r")
+                    .assumeRolePolicyDocument(policy).build())
+                .build());
+
+        var ex = assertThrows(IllegalArgumentException.class,
+            () -> service.validateRoleExists("arn:aws:iam::123:role/r"));
+        assertTrue(ex.getMessage().contains("does not allow sts:AssumeRole"));
+    }
+
+    @Test
+    void validateRoleExists_accepts_roleWithAssumeRoleTrust() {
+        String policy = java.net.URLEncoder.encode(
+            "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"pods.eks.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}",
+            java.nio.charset.StandardCharsets.UTF_8);
+        when(iamClient.getRole(any(GetRoleRequest.class)))
+            .thenReturn(GetRoleResponse.builder()
+                .role(Role.builder().roleName("r").arn("arn:aws:iam::123:role/r")
+                    .assumeRolePolicyDocument(policy).build())
+                .build());
+
+        assertDoesNotThrow(() -> service.validateRoleExists("arn:aws:iam::123:role/r"));
+    }
+
+    @Test
+    void validateRoleExists_accepts_roleWithStarAction() {
+        String policy = java.net.URLEncoder.encode(
+            "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::123:root\"},\"Action\":\"sts:*\"}]}",
+            java.nio.charset.StandardCharsets.UTF_8);
+        when(iamClient.getRole(any(GetRoleRequest.class)))
+            .thenReturn(GetRoleResponse.builder()
+                .role(Role.builder().roleName("r").arn("arn:aws:iam::123:role/r")
+                    .assumeRolePolicyDocument(policy).build())
+                .build());
+
+        assertDoesNotThrow(() -> service.validateRoleExists("arn:aws:iam::123:role/r"));
+    }
+
     // --- helpers ---
 
     private void mockGetItem(Map<String, AttributeValue> item) {
@@ -390,9 +449,13 @@ class DynamoDbAssociationServiceTest {
     }
 
     private void mockRoleExists() {
+        String trustPolicy = java.net.URLEncoder.encode(
+            "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"pods.eks.amazonaws.com\"},\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\"]}]}",
+            java.nio.charset.StandardCharsets.UTF_8);
         lenient().when(iamClient.getRole(any(GetRoleRequest.class)))
             .thenReturn(GetRoleResponse.builder()
-                .role(Role.builder().roleName("test-role").arn("arn:aws:iam::123456789012:role/test-role").build())
+                .role(Role.builder().roleName("test-role").arn("arn:aws:iam::123456789012:role/test-role")
+                    .assumeRolePolicyDocument(trustPolicy).build())
                 .build());
     }
 }

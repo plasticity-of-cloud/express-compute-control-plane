@@ -52,6 +52,7 @@ create a second association for the same service account returns
 | Check | EKS behavior | EKS-DX behavior | Status |
 |-------|-------------|-----------------|--------|
 | Role exists | `iam:GetRole` → 404 = reject | `iam:GetRole` → 404 = reject | ✅ |
+| Trust policy | Verifies role trusts `pods.eks.amazonaws.com` | Verifies trust policy allows `sts:AssumeRole` | ✅ |
 | Duplicate SA | `ResourceInUseException` | `409 ConflictException` | ✅ |
 | Required fields | `InvalidParameterException` | `400 InvalidParameterException` | ✅ |
 
@@ -59,7 +60,6 @@ create a second association for the same service account returns
 
 | Check | EKS behavior | Notes |
 |-------|-------------|-------|
-| Trust policy validation | Verifies role trusts `pods.eks.amazonaws.com` | Could verify role trusts Lambda execution role |
 | Service account exists | Not validated by EKS | K8s SA is validated at credential exchange time |
 
 ### IAM permissions required

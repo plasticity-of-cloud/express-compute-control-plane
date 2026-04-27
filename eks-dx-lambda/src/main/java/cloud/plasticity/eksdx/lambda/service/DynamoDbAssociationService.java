@@ -8,6 +8,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
 import software.amazon.awssdk.services.iam.IamClient;
 import software.amazon.awssdk.services.iam.model.GetRoleRequest;
+import software.amazon.awssdk.services.iam.model.GetRoleResponse;
 import software.amazon.awssdk.services.iam.model.NoSuchEntityException;
 
 import java.time.Instant;
@@ -190,23 +191,48 @@ public class DynamoDbAssociationService {
     }
 
     /**
-     * Validates that the IAM role exists. Matches real EKS behavior where
+     * Validates that the IAM role exists and has a trust policy that allows
+     * it to be assumed. Matches real EKS behavior where
      * CreatePodIdentityAssociation returns InvalidParameterException if the
-     * role does not exist.
+     * role does not exist or has an incorrect trust policy.
+     *
+     * <p>Real EKS requires the role to trust {@code pods.eks.amazonaws.com}.
+     * EKS-DX accepts roles that trust either:
+     * <ul>
+     *   <li>{@code pods.eks.amazonaws.com} (EKS-compatible roles)</li>
+     *   <li>Any AWS principal with {@code sts:AssumeRole} (Lambda execution role)</li>
+     * </ul>
      *
      * @see <a href="https://docs.aws.amazon.com/eks/latest/APIReference/API_CreatePodIdentityAssociation.html">
      *      CreatePodIdentityAssociation API</a>
+     * @see <a href="https://docs.aws.amazon.com/eks/latest/userguide/pod-id-association.html">
+     *      EKS Pod Identity association setup</a>
      */
     void validateRoleExists(String roleArn) {
-        // Extract role name from ARN: arn:aws:iam::123456789012:role/path/role-name
         String roleName = roleArn.contains("/")
             ? roleArn.substring(roleArn.lastIndexOf("/") + 1)
             : roleArn;
 
+        GetRoleResponse response;
         try {
-            iamClient.getRole(GetRoleRequest.builder().roleName(roleName).build());
+            response = iamClient.getRole(GetRoleRequest.builder().roleName(roleName).build());
         } catch (NoSuchEntityException e) {
             throw new IllegalArgumentException("Role provided in the request does not exist: " + roleArn);
+        }
+
+        // Validate trust policy allows sts:AssumeRole
+        String trustPolicy = response.role().assumeRolePolicyDocument();
+        if (trustPolicy == null || trustPolicy.isBlank()) {
+            throw new IllegalArgumentException(
+                "Role trust policy is empty. The role must allow sts:AssumeRole: " + roleArn);
+        }
+
+        // URL-decoded trust policy from IAM API
+        String decoded = java.net.URLDecoder.decode(trustPolicy, java.nio.charset.StandardCharsets.UTF_8);
+        if (!decoded.contains("sts:AssumeRole") && !decoded.contains("sts:*")) {
+            throw new IllegalArgumentException(
+                "Role trust policy does not allow sts:AssumeRole. " +
+                "The role must trust the EKS-DX Lambda execution role or pods.eks.amazonaws.com: " + roleArn);
         }
     }
 }
