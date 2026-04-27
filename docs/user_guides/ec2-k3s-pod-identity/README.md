@@ -1,115 +1,82 @@
-# EKS Pod Identity on EC2 + k3s (Full Emulation)
+# EKS Pod Identity on EC2 + k3s
 
 Run EKS Pod Identity on a plain EC2 instance with k3s — no managed EKS cluster required. Pods get temporary AWS credentials exactly as they would on managed EKS.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  EC2 Instance  (IAM role: sts:AssumeRole + sts:TagSession)      │
-│                                                                  │
-│  ┌──────────┐    ┌──────────────────────┐    ┌───────────────┐  │
-│  │  k3s     │    │ EKS Pod Identity     │    │ eks-auth-     │  │
-│  │  cluster │    │ Agent (DaemonSet)     │───▶│ proxy         │──┼──▶ AWS STS
-│  └──────────┘    │ 169.254.170.23:80    │    │ :8080         │  │
-│       │          └──────────────────────┘    └───────────────┘  │
-│       │          ┌──────────────────────┐                       │
-│       └─────────▶│ eks-pod-identity-    │                       │
-│                  │ webhook (admission)  │                       │
-│                  └──────────────────────┘                       │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  EC2 Instance (k3s)                                               │
+│                                                                   │
+│  ┌──────────┐   ┌─────────────────────┐   ┌──────────────────┐  │
+│  │  k3s     │   │ EKS Pod Identity    │   │ eks-auth-proxy   │  │
+│  │  cluster │   │ Agent (DaemonSet)   │──▶│ (TokenReview +   │──┼──▶ Lambda API
+│  └──────────┘   │ 169.254.170.23:80   │   │  forwarding)     │  │    (API Gateway)
+│       │         └─────────────────────┘   └──────────────────┘  │
+│       │         ┌─────────────────────┐                          │
+│       └────────▶│ eks-pod-identity-   │──▶ Lambda API            │
+│                 │ webhook (admission) │   (association lookup)    │
+│                 └─────────────────────┘                          │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  AWS (serverless)                                                 │
+│  API Gateway → Lambda → DynamoDB (JWKS + associations)           │
+│                       → STS AssumeRole → temporary credentials    │
+└──────────────────────────────────────────────────────────────────┘
 
 Flow:
-  1. Webhook mutates pod → injects env vars + projected SA token
+  1. Webhook queries Lambda API for associations → mutates pod
   2. AWS SDK in pod → calls Agent at 169.254.170.23/v1/credentials
   3. Agent → calls eks-auth-proxy via --endpoint flag
-  4. Proxy → TokenReview (k3s API) + association lookup (CRD/ConfigMap) + STS AssumeRole
-  5. Temporary credentials returned to pod
+  4. Proxy → TokenReview (k3s API) → forwards to Lambda API
+  5. Lambda → JWKS validation + association lookup + STS AssumeRole
+  6. Temporary credentials returned to pod
 ```
 
 ## Prerequisites
 
-- AWS CLI v2 configured with admin-level credentials (for initial setup only)
+- Lambda backend deployed (`sam deploy` — see [deploy/README.md](../../deploy/README.md))
+- `eks-dx` CLI built (`mvn -pl eks-dx-cli package -DskipTests`)
+- AWS CLI v2 configured
 - An EC2 key pair in the target region
-- Helm 3 installed (for the EKS Pod Identity Agent chart)
+- Helm 3
 
 ## Quick Start (Automated)
 
 ```bash
-./setup.sh --key-pair my-key --region us-east-1
+./setup.sh --key-pair my-key --region us-east-1 \
+  --eks-dx-endpoint https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
 ```
-
-This provisions the EC2 instance, IAM roles, and security group. See [setup.sh](setup.sh) for details.
 
 ## Manual Setup
 
-### 1. IAM Roles (Minimal Permissions)
+### 1. Deploy the Lambda Backend
 
-The EC2 instance needs only **two IAM actions** — it acts as a broker that assumes roles on behalf of pods.
-
-#### 1.1 Broker Role (attached to EC2)
+If not already deployed:
 
 ```bash
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-# Create the broker role
-aws iam create-role \
-  --role-name k3s-pod-id-broker \
-  --assume-role-policy-document file://iam/ec2-trust-policy.json
-
-# Attach minimal policy: only AssumeRole + TagSession on target roles
-aws iam put-role-policy \
-  --role-name k3s-pod-id-broker \
-  --policy-name broker-policy \
-  --policy-document '{
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Action": ["sts:AssumeRole", "sts:TagSession"],
-      "Resource": "arn:aws:iam::'$ACCOUNT_ID':role/k3s-pod-*"
-    }]
-  }'
-
-# Create instance profile
-aws iam create-instance-profile --instance-profile-name k3s-pod-id-profile
-aws iam add-role-to-instance-profile \
-  --instance-profile-name k3s-pod-id-profile \
-  --role-name k3s-pod-id-broker
+cd aws-eks-auth-service-proxy
+mvn -pl eks-dx-lambda package -DskipTests
+sam deploy -t sam.yaml --stack-name eks-dx --region us-east-1 \
+  --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset
 ```
 
-The `Resource` pattern `k3s-pod-*` scopes which roles pods can assume. Adjust to match your naming convention.
-
-#### 1.2 Target Roles (assumed by pods)
-
-Each application role must trust the broker:
-
-```bash
-aws iam create-role \
-  --role-name k3s-pod-my-app \
-  --assume-role-policy-document '{
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Principal": {"AWS": "arn:aws:iam::'$ACCOUNT_ID':role/k3s-pod-id-broker"},
-      "Action": ["sts:AssumeRole", "sts:TagSession"]
-    }]
-  }'
-
-# Attach whatever permissions the app needs
-aws iam attach-role-policy \
-  --role-name k3s-pod-my-app \
-  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+Save the endpoint from the output:
+```
+Endpoint: https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
 ```
 
 ### 2. Launch EC2 + Install k3s
 
+No special IAM broker role needed — STS is handled by the Lambda.
+
 ```bash
-# Launch with the broker instance profile
 aws ec2 run-instances \
   --image-id <ubuntu-22.04-ami> \
   --instance-type t4g.medium \
   --key-name my-key \
-  --iam-instance-profile Name=k3s-pod-id-profile \
   --user-data '#!/bin/bash
     apt-get update -qq && apt-get install -y -qq curl
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -
@@ -119,232 +86,152 @@ aws ec2 run-instances \
 ```
 
 SSH in and verify:
-
 ```bash
 ssh -i my-key.pem ubuntu@<ip>
 kubectl get nodes   # should show Ready
 ```
 
-### 3. Build and Deploy Components
+### 3. Register the Cluster
 
-#### 3.1 Build and deploy eks-auth-proxy
-
-```bash
-cd aws-eks-auth-service-proxy
-./build.sh --target proxy
-
-# Deploy CRD + proxy
-kubectl apply -f eks-pod-identity-crd/src/main/resources/crd/pod-identity-association-crd.yaml
-kubectl apply -f deploy/eks-auth-proxy.yaml
-```
-
-#### 3.2 Install EKS Pod Identity Agent via Helm
-
-The official chart lives in the [eks-pod-identity-agent](https://github.com/aws/eks-pod-identity-agent) repo under `charts/eks-pod-identity-agent/`.
+From a machine with kubeconfig access and the CLI:
 
 ```bash
-CLUSTER_NAME=k3s-pod-id
-REGION=us-east-1
+CLI="java -jar eks-dx-cli/target/eks-dx-cli-*-runner.jar"
 
-helm install eks-pod-identity-agent \
-  /path/to/eks-pod-identity-agent/charts/eks-pod-identity-agent \
-  --namespace kube-system \
-  --set clusterName="$CLUSTER_NAME" \
-  --set env.AWS_REGION="$REGION" \
-  --set "agent.additionalArgs.--endpoint=http://eks-auth-proxy.kube-system.svc.cluster.local:8080" \
-  --set "affinity="
-```
+# Configure CLI endpoint
+$CLI configure --endpoint https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod --region us-east-1
 
-Key values explained:
+# Register cluster (auto-reads JWKS + OIDC issuer from kubeconfig)
+$CLI create cluster --name my-k3s --region us-east-1
 
-| Value | Purpose |
-|-------|---------|
-| `agent.additionalArgs.--endpoint` | Points the agent at our proxy instead of the real EKS Auth Service |
-| `affinity=` | Clears the default node affinity that filters for EKS compute types |
-
-The init container (`init.create=true`, the default) **must stay enabled** — it creates a dummy network interface and attaches the link-local address `169.254.170.23` to the node. Without it, pods can't reach the agent. It uses `netlink` syscalls only (no EKS dependencies) and works on k3s.
-
-If the chart is not available locally, you can install from the cloned repo:
-
-```bash
-git clone https://github.com/aws/eks-pod-identity-agent.git
-helm install eks-pod-identity-agent \
-  ./eks-pod-identity-agent/charts/eks-pod-identity-agent \
-  --namespace kube-system \
-  --set clusterName="$CLUSTER_NAME" \
-  --set env.AWS_REGION="$REGION" \
-  --set "agent.additionalArgs.--endpoint=http://eks-auth-proxy.kube-system.svc.cluster.local:8080" \
-  --set "affinity="
-```
-
-Verify the agent is running:
-
-```bash
-kubectl get ds -n kube-system eks-pod-identity-agent
-kubectl logs -n kube-system -l app.kubernetes.io/name=eks-pod-identity-agent
-# Should show: "Overriding EKS Auth default endpoint with http://..."
-```
-
-#### 3.3 Deploy the webhook
-
-```bash
-# cert-manager is required for webhook TLS
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
-kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
-
-./deploy.sh --target webhook
+# Verify
+$CLI describe cluster --name my-k3s
 ```
 
 ### 4. Create Pod Identity Associations
 
-Using the ConfigMap fallback (simplest):
-
 ```bash
+# Create a target IAM role that the Lambda can assume
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+LAMBDA_ROLE=$(aws cloudformation describe-stacks --stack-name eks-dx \
+  --query 'Stacks[0].Outputs[?OutputKey==`FunctionArn`].OutputValue' --output text | \
+  sed 's/function.*//')
 
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: pod-identity-associations
-  namespace: kube-system
-data:
-  "k3s-pod-id:default:my-app": "arn:aws:iam::${ACCOUNT_ID}:role/k3s-pod-my-app"
-  "k3s-pod-id:ci-cd:*": "arn:aws:iam::${ACCOUNT_ID}:role/k3s-pod-ci-cd"
-EOF
+aws iam create-role \
+  --role-name eks-dx-pod-my-app \
+  --assume-role-policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": {"AWS": "arn:aws:iam::'$ACCOUNT_ID':root"},
+      "Action": ["sts:AssumeRole", "sts:TagSession"]
+    }]
+  }'
+
+aws iam attach-role-policy \
+  --role-name eks-dx-pod-my-app \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+# Register the association
+$CLI create pod-identity-association \
+  --cluster-name my-k3s \
+  --namespace default \
+  --service-account my-app \
+  --role-arn arn:aws:iam::${ACCOUNT_ID}:role/eks-dx-pod-my-app
 ```
 
-Or using CRDs:
+### 5. Deploy In-Cluster Components
 
 ```bash
-kubectl apply -f - <<EOF
-apiVersion: eks.amazonaws.com/v1
-kind: PodIdentityAssociation
-metadata:
-  name: my-app
-  namespace: default
-spec:
-  clusterName: k3s-pod-id
-  namespace: default
-  serviceAccount: my-app
-  roleArn: arn:aws:iam::${ACCOUNT_ID}:role/k3s-pod-my-app
-EOF
+EKS_DX_ENDPOINT=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
+
+# cert-manager (for webhook TLS)
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
+
+# eks-auth-proxy
+kubectl apply -f eks-auth-proxy/k8s/cert-manager.yaml
+kubectl apply -f deploy/eks-auth-proxy.yaml
+# Set the Lambda endpoint
+kubectl set env deployment/eks-auth-proxy -n kube-system EKS_DX_ENDPOINT=$EKS_DX_ENDPOINT
+
+# eks-pod-identity-webhook
+kubectl apply -f eks-pod-identity-webhook/k8s/cert-manager.yaml
+kubectl apply -f eks-pod-identity-webhook/k8s/deployment.yaml
+kubectl set env deployment/eks-pod-identity-webhook -n kube-system \
+  EKS_DX_ENDPOINT=$EKS_DX_ENDPOINT EKS_CLUSTER_NAME=my-k3s
+kubectl apply -f eks-pod-identity-webhook/k8s/mutating-webhook-configuration.yaml
+
+# EKS Pod Identity Agent
+git clone https://github.com/aws/eks-pod-identity-agent.git /tmp/eks-pod-identity-agent
+helm install eks-pod-identity-agent \
+  /tmp/eks-pod-identity-agent/charts/eks-pod-identity-agent \
+  --namespace kube-system \
+  --set clusterName="my-k3s" \
+  --set env.AWS_REGION="us-east-1" \
+  --set "agent.additionalArgs.--endpoint=http://eks-auth-proxy.kube-system.svc.cluster.local:8080" \
+  --set "affinity="
 ```
 
-### 5. Test
+### 6. Test
 
 ```bash
-# Create a service account
 kubectl create serviceaccount my-app
 
-# Run a test pod
 kubectl run aws-test --image=amazon/aws-cli:latest --rm -it \
   --overrides='{"spec":{"serviceAccountName":"my-app"}}' \
   -- sts get-caller-identity
 ```
 
-Expected output:
-
+Expected:
 ```json
 {
     "UserId": "AROA...:default-my-app",
     "Account": "123456789012",
-    "Arn": "arn:aws:sts::123456789012:assumed-role/k3s-pod-my-app/default-my-app"
+    "Arn": "arn:aws:sts::123456789012:assumed-role/eks-dx-pod-my-app/default-my-app"
 }
 ```
 
-## How the Agent Connects to the Proxy
-
-The EKS Pod Identity Agent has a `--endpoint` flag ([source](https://github.com/aws/eks-pod-identity-agent/blob/main/cmd/server.go#L149)) that overrides the EKS Auth Service URL:
-
-```go
-serverCmd.Flags().StringVar(&overrideEksAuthEndpoint, "endpoint", "", "Override for EKS auth endpoint")
-```
-
-The Helm chart exposes this via `agent.additionalArgs`:
-
-```yaml
-agent:
-  additionalArgs:
-    "--endpoint": "http://eks-auth-proxy.kube-system.svc.cluster.local:8080"
-```
-
-The proxy exposes an AWS-API-compatible endpoint at `POST /clusters/{clusterName}/assets` (see `EksAuthAgentResource.java`) that matches the wire format the agent's SDK client expects.
-
-## IAM Permission Summary
+## IAM Summary
 
 | Role | Permissions | Purpose |
 |------|-------------|---------|
-| EC2 broker (`k3s-pod-id-broker`) | `sts:AssumeRole`, `sts:TagSession` on `k3s-pod-*` | Assumes target roles on behalf of pods |
-| Target roles (`k3s-pod-*`) | Whatever the app needs (S3, DynamoDB, etc.) | Actual application permissions |
+| Lambda execution role | `dynamodb:*` on eks-dx tables, `sts:AssumeRole` on `eks-dx-pod-*` | Managed by SAM/CDK |
+| Target roles (`eks-dx-pod-*`) | Whatever the app needs | Assumed by Lambda on behalf of pods |
+| EC2 instance | None required | k3s only — no AWS API calls from the node |
 
-No `eks:*`, `ec2:*`, or other broad permissions required on the broker role.
+## Troubleshooting
+
+| Symptom | Check |
+|---------|-------|
+| Agent can't reach proxy | `kubectl logs -n kube-system -l app.kubernetes.io/name=eks-pod-identity-agent` |
+| Agent not scheduled | Ensure `--set "affinity="` was passed to Helm |
+| TokenReview fails | Proxy SA needs `tokenreviews` create permission |
+| Lambda returns 400 | `$CLI describe cluster --name my-k3s` — verify cluster is registered |
+| No association found | `$CLI list pod-identity-associations --cluster-name my-k3s` |
+| STS AssumeRole fails | Target role must trust the Lambda execution role |
+| Webhook not mutating | `kubectl get mutatingwebhookconfigurations` |
 
 ## Cleanup
 
 ```bash
-# Remove Helm release
+# In-cluster
 helm uninstall eks-pod-identity-agent -n kube-system
+kubectl delete -f deploy/eks-auth-proxy.yaml
+kubectl delete -f eks-pod-identity-webhook/k8s/
 
-# Terminate EC2
+# Associations + cluster
+$CLI delete pod-identity-association --cluster-name my-k3s --association-id <id>
+$CLI delete cluster --name my-k3s
+
+# EC2
 aws ec2 terminate-instances --instance-ids <instance-id>
 
-# Remove IAM
-aws iam remove-role-from-instance-profile \
-  --instance-profile-name k3s-pod-id-profile --role-name k3s-pod-id-broker
-aws iam delete-instance-profile --instance-profile-name k3s-pod-id-profile
-aws iam delete-role-policy --role-name k3s-pod-id-broker --policy-name broker-policy
-aws iam delete-role --role-name k3s-pod-id-broker
-
-# Remove target roles
-aws iam detach-role-policy --role-name k3s-pod-my-app \
+# Target IAM roles
+aws iam detach-role-policy --role-name eks-dx-pod-my-app \
   --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
-aws iam delete-role --role-name k3s-pod-my-app
+aws iam delete-role --role-name eks-dx-pod-my-app
 
-# Remove security group
-aws ec2 delete-security-group --group-name k3s-pod-id-sg
-```
-
-## Troubleshooting
-
-**Agent can't reach proxy**:
-```bash
-kubectl logs -n kube-system -l app.kubernetes.io/name=eks-pod-identity-agent
-# Look for: "Overriding EKS Auth default endpoint with http://..."
-# Verify proxy is running:
-kubectl get svc eks-auth-proxy -n kube-system
-```
-
-**Agent pod not scheduled (affinity mismatch)**:
-```bash
-# Default chart affinity excludes non-EKS nodes. Clear it:
-helm upgrade eks-pod-identity-agent ... --set "affinity="
-```
-
-**TokenReview fails**:
-```bash
-kubectl logs -n kube-system -l app=eks-auth-proxy
-# The proxy validates tokens via the k3s API server's TokenReview endpoint.
-# Ensure the proxy's ServiceAccount has tokenreviews create permission.
-```
-
-**STS AssumeRole fails**:
-```bash
-# Verify the EC2 instance has the broker role:
-curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/
-
-# Verify the target role trusts the broker:
-aws iam get-role --role-name k3s-pod-my-app --query 'Role.AssumeRolePolicyDocument'
-```
-
-**Pod not getting credentials injected**:
-```bash
-# Check webhook is running and mutating:
-kubectl get mutatingwebhookconfigurations
-kubectl logs -n kube-system -l app=eks-pod-identity-webhook
-
-# Verify association exists:
-kubectl get configmap pod-identity-associations -n kube-system -o yaml
-# or
-kubectl get podidentityassociations -A
+# Lambda backend (optional — shared across clusters)
+# sam delete --stack-name eks-dx
 ```
