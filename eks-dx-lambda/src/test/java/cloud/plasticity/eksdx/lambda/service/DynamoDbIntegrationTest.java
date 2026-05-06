@@ -7,12 +7,18 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
+import software.amazon.awssdk.services.iam.IamClient;
+import software.amazon.awssdk.services.iam.model.GetRoleRequest;
+import software.amazon.awssdk.services.iam.model.GetRoleResponse;
+import software.amazon.awssdk.services.iam.model.Role;
 
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 /**
  * Integration tests using DynamoDB Local.
@@ -60,9 +66,22 @@ class DynamoDbIntegrationTest {
         clusterService.dynamoDb = client;
         clusterService.tableName = "it-clusters";
 
+        IamClient iamClient = mock(IamClient.class);
+        when(iamClient.getRole(any(GetRoleRequest.class))).thenReturn(
+            GetRoleResponse.builder()
+                .role(Role.builder()
+                    .roleName("test")
+                    .arn("arn:aws:iam::123456789012:role/test")
+                    .assumeRolePolicyDocument("{\"Statement\":[{\"Action\":\"sts:AssumeRole\"}]}")
+                    .path("/")
+                    .createDate(java.time.Instant.now())
+                    .build())
+                .build());
+
         associationService = new DynamoDbAssociationService();
         associationService.dynamoDb = client;
         associationService.tableName = "it-associations";
+        associationService.iamClient = iamClient;
     }
 
     @AfterAll
