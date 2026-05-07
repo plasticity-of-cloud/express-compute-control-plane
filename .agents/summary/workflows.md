@@ -266,10 +266,10 @@ cdk deploy
 ### Container Deployment
 ```bash
 # Build container images
-mvn -pl eks-auth-proxy package -DskipTests \
+mvn -pl eks-dx-auth-proxy package -DskipTests \
   -Dquarkus.container-image.build=true
 
-mvn -pl eks-pod-identity-webhook package -DskipTests \
+mvn -pl eks-dx-pod-identity-webhook package -DskipTests \
   -Dquarkus.container-image.build=true
 
 # Deploy to Kubernetes
@@ -302,7 +302,7 @@ mvn -pl eks-dx-lambda test \
 ### End-to-End Testing
 ```bash
 # Full integration test with real AWS resources
-mvn -pl eks-auth-proxy test \
+mvn -pl eks-dx-auth-proxy test \
   -Dintegration.aws=true \
   -Dintegration.cluster=my-cluster \
   -Daws.region=us-east-1

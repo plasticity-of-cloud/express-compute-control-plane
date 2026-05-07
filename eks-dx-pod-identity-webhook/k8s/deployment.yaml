@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: eks-pod-identity-webhook
+  name: eks-dx-pod-identity-webhook
   namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eks-pod-identity-webhook
+  name: eks-dx-pod-identity-webhook
 rules:
 - apiGroups: ["eks.plasticity.cloud"]
   resources: ["podidentityassociations"]
@@ -16,40 +16,40 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: eks-pod-identity-webhook
+  name: eks-dx-pod-identity-webhook
 subjects:
 - kind: ServiceAccount
-  name: eks-pod-identity-webhook
+  name: eks-dx-pod-identity-webhook
   namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: eks-pod-identity-webhook
+  name: eks-dx-pod-identity-webhook
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eks-pod-identity-webhook
+  name: eks-dx-pod-identity-webhook
   namespace: kube-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: eks-pod-identity-webhook
+      app: eks-dx-pod-identity-webhook
   template:
     metadata:
       labels:
-        app: eks-pod-identity-webhook
+        app: eks-dx-pod-identity-webhook
     spec:
-      serviceAccountName: eks-pod-identity-webhook
+      serviceAccountName: eks-dx-pod-identity-webhook
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: eks-pod-identity-webhook
-        image: 864899852480.dkr.ecr.ap-south-1.amazonaws.com/plcloud/eks-pod-identity-webhook:latest
+      - name: eks-dx-pod-identity-webhook
+        image: 864899852480.dkr.ecr.ap-south-1.amazonaws.com/plcloud/eks-dx-pod-identity-webhook:latest
         ports:
         - containerPort: 8443
           name: https
@@ -86,16 +86,16 @@ spec:
       volumes:
       - name: tls-certs
         secret:
-          secretName: eks-pod-identity-webhook-tls
+          secretName: eks-dx-pod-identity-webhook-tls
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: eks-pod-identity-webhook
+  name: eks-dx-pod-identity-webhook
   namespace: kube-system
 spec:
   selector:
-    app: eks-pod-identity-webhook
+    app: eks-dx-pod-identity-webhook
   ports:
   - name: https
     port: 8443

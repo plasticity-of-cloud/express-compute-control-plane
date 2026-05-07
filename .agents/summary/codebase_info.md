@@ -21,8 +21,8 @@
 eks-dx-control-plane/
 ├── eks-dx-lambda/           # Core Lambda service (150+ LOC)
 ├── eks-dx-cli/              # Native CLI tool (200+ LOC)  
-├── eks-auth-proxy/          # In-cluster proxy (180+ LOC)
-├── eks-pod-identity-webhook/ # K8s admission webhook (190+ LOC)
+├── eks-dx-auth-proxy/          # In-cluster proxy (180+ LOC)
+├── eks-dx-pod-identity-webhook/ # K8s admission webhook (190+ LOC)
 ├── infra/                   # CDK infrastructure (190+ LOC)
 └── docs/                    # User guides and scripts
 ```
@@ -41,13 +41,13 @@ eks-dx-control-plane/
 - **Functions**: 80+
 - **Purpose**: Cluster and association management commands
 
-### eks-auth-proxy (In-Cluster Component)
+### eks-dx-auth-proxy (In-Cluster Component)
 - **Files**: 8 prioritized
 - **Classes**: 8
 - **Functions**: 25+
 - **Purpose**: TokenReview validation and Lambda forwarding
 
-### eks-pod-identity-webhook (Kubernetes Integration)
+### eks-dx-pod-identity-webhook (Kubernetes Integration)
 - **Files**: 6 prioritized
 - **Classes**: 5
 - **Functions**: 15+

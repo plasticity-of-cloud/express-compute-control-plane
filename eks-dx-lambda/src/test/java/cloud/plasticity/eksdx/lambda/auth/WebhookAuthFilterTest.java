@@ -104,14 +104,14 @@ class WebhookAuthFilterTest {
         when(ctx.getHeaderString("Authorization")).thenReturn("Bearer valid-token");
         doNothing().when(tokenValidationService).validateWebhookToken(
             "Bearer valid-token", "test-cluster",
-            "system:serviceaccount:kube-system:eks-pod-identity-webhook");
+            "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook");
 
         filter.filter(ctx);
 
         verify(ctx, never()).abortWith(any());
         verify(tokenValidationService).validateWebhookToken(
             "Bearer valid-token", "test-cluster",
-            "system:serviceaccount:kube-system:eks-pod-identity-webhook");
+            "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook");
     }
 
     @Test
@@ -157,7 +157,7 @@ class WebhookAuthFilterTest {
 
         verify(tokenValidationService).validateWebhookToken(
             "Bearer token", "my-k3s-cluster",
-            "system:serviceaccount:kube-system:eks-pod-identity-webhook");
+            "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook");
     }
 
     @Test
@@ -171,6 +171,6 @@ class WebhookAuthFilterTest {
 
         verify(tokenValidationService).validateWebhookToken(
             "Bearer token", "prod-cluster",
-            "system:serviceaccount:kube-system:eks-pod-identity-webhook");
+            "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook");
     }
 }

@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
 rules:
 - apiGroups: ["authentication.k8s.io"]
   resources: ["tokenreviews"]
@@ -14,20 +14,20 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
 subjects:
 - kind: ServiceAccount
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
   namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: eks-auth-proxy-selfsigned
+  name: eks-dx-auth-proxy-selfsigned
   namespace: kube-system
 spec:
   selfSigned: {}
@@ -35,37 +35,37 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: eks-auth-proxy-ca
+  name: eks-dx-auth-proxy-ca
   namespace: kube-system
 spec:
   isCA: true
-  commonName: eks-auth-proxy-ca
-  secretName: eks-auth-proxy-ca
+  commonName: eks-dx-auth-proxy-ca
+  secretName: eks-dx-auth-proxy-ca
   issuerRef:
-    name: eks-auth-proxy-selfsigned
+    name: eks-dx-auth-proxy-selfsigned
     kind: Issuer
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: eks-auth-proxy-ca
+  name: eks-dx-auth-proxy-ca
   namespace: kube-system
 spec:
   ca:
-    secretName: eks-auth-proxy-ca
+    secretName: eks-dx-auth-proxy-ca
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: eks-auth-proxy-cert
+  name: eks-dx-auth-proxy-cert
   namespace: kube-system
 spec:
-  secretName: eks-auth-proxy-tls
+  secretName: eks-dx-auth-proxy-tls
   duration: 8760h
   renewBefore: 720h
   issuerRef:
-    name: eks-auth-proxy-ca
+    name: eks-dx-auth-proxy-ca
     kind: Issuer
   dnsNames:
-  - eks-auth-proxy.kube-system.svc
-  - eks-auth-proxy.kube-system.svc.cluster.local
+  - eks-dx-auth-proxy.kube-system.svc
+  - eks-dx-auth-proxy.kube-system.svc.cluster.local

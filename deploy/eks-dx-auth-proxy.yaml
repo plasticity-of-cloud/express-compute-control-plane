@@ -2,13 +2,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
   namespace: kube-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
 rules:
 - apiGroups: ["authentication.k8s.io"]
   resources: ["tokenreviews"]
@@ -20,40 +20,40 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
 subjects:
 - kind: ServiceAccount
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
   namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
   namespace: kube-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: eks-auth-proxy
+      app: eks-dx-auth-proxy
   template:
     metadata:
       labels:
-        app: eks-auth-proxy
+        app: eks-dx-auth-proxy
     spec:
-      serviceAccountName: eks-auth-proxy
+      serviceAccountName: eks-dx-auth-proxy
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
-      - name: eks-auth-proxy
-        image: eks-auth-proxy:latest
+      - name: eks-dx-auth-proxy
+        image: eks-dx-auth-proxy:latest
         ports:
         - containerPort: 8443
           name: https
@@ -65,17 +65,17 @@ spec:
         - name: AWS_ACCOUNT_ID
           valueFrom:
             secretKeyRef:
-              name: eks-auth-proxy-aws-creds
+              name: eks-dx-auth-proxy-aws-creds
               key: account-id
         - name: AWS_ACCESS_KEY_ID
           valueFrom:
             secretKeyRef:
-              name: eks-auth-proxy-aws-creds
+              name: eks-dx-auth-proxy-aws-creds
               key: access-key-id
         - name: AWS_SECRET_ACCESS_KEY
           valueFrom:
             secretKeyRef:
-              name: eks-auth-proxy-aws-creds
+              name: eks-dx-auth-proxy-aws-creds
               key: secret-access-key
         volumeMounts:
         - name: tls-certs
@@ -105,16 +105,16 @@ spec:
       volumes:
       - name: tls-certs
         secret:
-          secretName: eks-auth-proxy-tls
+          secretName: eks-dx-auth-proxy-tls
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
   namespace: kube-system
 spec:
   selector:
-    app: eks-auth-proxy
+    app: eks-dx-auth-proxy
   ports:
   - name: https
     port: 443

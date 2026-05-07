@@ -10,8 +10,8 @@
   <packaging>pom</packaging>
 
   <modules>
-    <module>eks-auth-proxy</module>
-    <module>eks-pod-identity-webhook</module>
+    <module>eks-dx-auth-proxy</module>
+    <module>eks-dx-pod-identity-webhook</module>
     <module>eks-dx-lambda</module>
     <module>eks-dx-cli</module>
     <module>infra</module>

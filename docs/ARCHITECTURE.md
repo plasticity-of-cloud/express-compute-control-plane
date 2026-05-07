@@ -7,8 +7,8 @@ graph TB
     subgraph "Kubernetes Cluster (k3s / microk8s / EKS-D)"
         Pod["Application Pod"]
         Agent["EKS Pod Identity Agent<br/>(DaemonSet, 169.254.170.23)"]
-        Proxy["eks-auth-proxy<br/>(TokenReview + forwarding)"]
-        Webhook["eks-pod-identity-webhook<br/>(Admission Controller)"]
+        Proxy["eks-dx-auth-proxy<br/>(TokenReview + forwarding)"]
+        Webhook["eks-dx-pod-identity-webhook<br/>(Admission Controller)"]
         KubeAPI["Kubernetes API Server"]
     end
 
@@ -53,7 +53,7 @@ graph TB
 sequenceDiagram
     participant Pod as Application Pod
     participant Agent as Pod Identity Agent
-    participant Proxy as eks-auth-proxy
+    participant Proxy as eks-dx-auth-proxy
     participant K8s as K8s API Server
     participant GW as API Gateway
     participant Lambda as eks-dx-lambda
@@ -143,7 +143,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant K8s as K8s API Server
-    participant WH as eks-pod-identity-webhook
+    participant WH as eks-dx-pod-identity-webhook
     participant GW as API Gateway
     participant Lambda as eks-dx-lambda
 
@@ -314,21 +314,21 @@ graph TB
 
     subgraph "Cluster A (k3s on EC2)"
         A_Agent["Pod Identity Agent"]
-        A_Proxy["eks-auth-proxy"]
+        A_Proxy["eks-dx-auth-proxy"]
         A_Webhook["Webhook"]
         A_Pods["Application Pods"]
     end
 
     subgraph "Cluster B (microk8s on-prem)"
         B_Agent["Pod Identity Agent"]
-        B_Proxy["eks-auth-proxy"]
+        B_Proxy["eks-dx-auth-proxy"]
         B_Webhook["Webhook"]
         B_Pods["Application Pods"]
     end
 
     subgraph "Cluster C (EKS-D)"
         C_Agent["Pod Identity Agent"]
-        C_Proxy["eks-auth-proxy"]
+        C_Proxy["eks-dx-auth-proxy"]
         C_Webhook["Webhook"]
         C_Pods["Application Pods"]
     end

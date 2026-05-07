@@ -18,12 +18,12 @@ This is a **multi-module Quarkus + CDK project** providing EKS Pod Identity auth
 │       ├── association/     # CreateAssociation, Describe, List, Delete commands
 │       ├── config/          # ConfigureCommand, EksDxConfig (~/.eks-dx/config)
 │       └── util/            # EksDxApiClient (JDK HttpClient), AwsSigV4Signer
-├── eks-auth-proxy/          # 🔄 In-cluster proxy (TokenReview + Lambda forwarding)
+├── eks-dx-auth-proxy/          # 🔄 In-cluster proxy (TokenReview + Lambda forwarding)
 │   └── src/main/java/cloud/plasticity/eksauth/
 │       ├── resource/        # EksAuthAgentResource (POST /clusters/{name}/assets)
 │       └── service/         # TokenValidationService (K8s TokenReview),
 │                            # LambdaForwardingService (JDK HttpClient → Lambda)
-├── eks-pod-identity-webhook/ # ⚡ Kubernetes admission webhook
+├── eks-dx-pod-identity-webhook/ # ⚡ Kubernetes admission webhook
 │   └── src/main/java/cloud/plasticity/webhook/
 │       ├── WebhookEndpoint.java        # POST /mutate
 │       ├── PodIdentityMutator.java     # Injects env vars + projected token volume
@@ -43,8 +43,8 @@ This is a **multi-module Quarkus + CDK project** providing EKS Pod Identity auth
 |-----------|------|---------|
 | **Credential Exchange** | `eks-dx-lambda/.../EksAuthResource.java` | Main API endpoint for pod authentication |
 | **Token Validation** | `eks-dx-lambda/.../JwksTokenValidationService.java` | JWT signature verification |
-| **In-Cluster Proxy** | `eks-auth-proxy/.../EksAuthAgentResource.java` | Fast-fail token validation + forwarding |
-| **Webhook Controller** | `eks-pod-identity-webhook/.../WebhookEndpoint.java` | Pod mutation for identity injection |
+| **In-Cluster Proxy** | `eks-dx-auth-proxy/.../EksAuthAgentResource.java` | Fast-fail token validation + forwarding |
+| **Webhook Controller** | `eks-dx-pod-identity-webhook/.../WebhookEndpoint.java` | Pod mutation for identity injection |
 
 ### Management API Entry Points
 | Component | File | Purpose |
@@ -62,7 +62,7 @@ This is a **multi-module Quarkus + CDK project** providing EKS Pod Identity auth
 ## Authentication Flow
 
 ```
-Pod → EKS Pod Identity Agent → eks-auth-proxy (in-cluster)
+Pod → EKS Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
   │
   ├─ 1. TokenReview (fast-fail — K8s API validates JWT signature)
   │
@@ -126,7 +126,7 @@ mvn test -Dintegration.dynamodb=true
 | Java packages | `cloud.plasticity.*` | `cloud.plasticity.eksdx.lambda.service` |
 | Maven groupId | `cloud.plasticity` | `<groupId>cloud.plasticity</groupId>` |
 | CLI config | `~/.eks-dx/config` | endpoint, region |
-| Container images | `plasticity.cloud/` prefix or ECR | `plasticity.cloud/eks-auth-proxy` |
+| Container images | `plasticity.cloud/` prefix or ECR | `plasticity.cloud/eks-dx-auth-proxy` |
 | API Gateway | `eks-dx.plasticity.cloud` | Custom domain (optional) |
 
 ## Infrastructure

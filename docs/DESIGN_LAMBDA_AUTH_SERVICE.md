@@ -54,7 +54,7 @@ Two-tier architecture: a lightweight in-cluster proxy handles Kubernetes token v
 │  └──────────┬──────────────┘                                        │
 │             │                                                        │
 │  ┌──────────▼──────────────┐                                        │
-│  │ eks-auth-proxy           │                                        │
+│  │ eks-dx-auth-proxy           │                                        │
 │  │ (lightweight, in-cluster)│                                        │
 │  │                          │                                        │
 │  │ 1. Kubernetes TokenReview│ ← validates JWT signature + audience  │
@@ -64,7 +64,7 @@ Two-tier architecture: a lightweight in-cluster proxy handles Kubernetes token v
 │  └──────────────────────────┘                                        │
 │                                                                      │
 │  ┌──────────────────────────┐                                        │
-│  │ eks-pod-identity-webhook │                                        │
+│  │ eks-dx-pod-identity-webhook │                                        │
 │  │ queries Lambda API for   │                                        │
 │  │ association existence    │                                        │
 │  └──────────────────────────┘                                        │
@@ -203,8 +203,8 @@ The EC2 instance profile can be empty or removed entirely.
 | Component | Location | Responsibilities | AWS Permissions |
 |-----------|----------|-----------------|-----------------|
 | **EKS-DX Service** | Lambda | JWKS token validation, association lookup, STS AssumeRole, cluster + association CRUD | DynamoDB read/write, STS AssumeRole |
-| **eks-auth-proxy** | In-cluster | TokenReview (fast-fail), forward raw token to Lambda | None (Kubernetes RBAC only) |
-| **eks-pod-identity-webhook** | In-cluster | Pod mutation (inject env vars + token volume), association check via Lambda | None (uses projected SA token to auth) |
+| **eks-dx-auth-proxy** | In-cluster | TokenReview (fast-fail), forward raw token to Lambda | None (Kubernetes RBAC only) |
+| **eks-dx-pod-identity-webhook** | In-cluster | Pod mutation (inject env vars + token volume), association check via Lambda | None (uses projected SA token to auth) |
 | **EKS Pod Identity Agent** | In-cluster (DaemonSet) | Intercepts 169.254.170.23, forwards to proxy | None |
 | **eks-dx CLI** | Developer machine | Cluster registration, association management | Calls Lambda API via HTTPS |
 
@@ -219,7 +219,7 @@ Different audiences distinguish credential exchange from management queries:
 | Caller | Endpoint | Token audience | Lambda checks |
 |--------|----------|---------------|---------------|
 | **Proxy** (on behalf of pod) | `POST /clusters/{name}/assets` | `pods.eks.amazonaws.com` | Valid signature + audience + expiry → look up association → STS AssumeRole |
-| **Webhook** | `GET /clusters/{name}/pod-identity-associations` | `eks-dx.plasticity.cloud` | Valid signature + audience + subject is `system:serviceaccount:kube-system:eks-pod-identity-webhook` |
+| **Webhook** | `GET /clusters/{name}/pod-identity-associations` | `eks-dx.plasticity.cloud` | Valid signature + audience + subject is `system:serviceaccount:kube-system:eks-dx-pod-identity-webhook` |
 
 ### Proxy → Lambda (credential exchange)
 
@@ -250,7 +250,7 @@ Authorization: Bearer <webhook-sa-token>
 The Lambda:
 1. Validates JWT signature via JWKS (same mechanism as credential exchange)
 2. Checks audience = `eks-dx.plasticity.cloud` (not `pods.eks.amazonaws.com`)
-3. Checks subject = `system:serviceaccount:kube-system:eks-pod-identity-webhook`
+3. Checks subject = `system:serviceaccount:kube-system:eks-dx-pod-identity-webhook`
 4. Returns associations
 
 ### Why This Works

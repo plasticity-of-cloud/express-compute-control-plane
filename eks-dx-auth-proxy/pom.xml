@@ -1,22 +1,19 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<?xml version="1.0"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <modelVersion>4.0.0</modelVersion>
-
   <parent>
     <groupId>cloud.plasticity</groupId>
     <artifactId>aws-eks-auth-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </parent>
-
-  <artifactId>eks-pod-identity-webhook</artifactId>
-
+  <artifactId>eks-dx-auth-proxy</artifactId>
+  <description>Simplified in-cluster proxy — TokenReview + Lambda forwarding</description>
   <properties>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <skipITs>true</skipITs>
-    <josdk-webhooks.version>3.0.1</josdk-webhooks.version>
+    <fabric8.version>6.13.4</fabric8.version>
   </properties>
-
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -28,29 +25,42 @@
       </dependency>
     </dependencies>
   </dependencyManagement>
-
   <dependencies>
-    <!-- Quarkus -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-arc</artifactId>
-    </dependency>
+    <!-- REST + JSON -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest-jackson</artifactId>
+    </dependency>
+
+    <!-- Health checks -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-health</artifactId>
+    </dependency>
+
+    <!-- Metrics -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+    </dependency>
+
+    <!-- Kubernetes client (for TokenReview) -->
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>kubernetes-client</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-kubernetes-client</artifactId>
     </dependency>
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-smallrye-health</artifactId>
-    </dependency>
+
+    <!-- Container image -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-container-image-jib</artifactId>
     </dependency>
+
+    <!-- Kubernetes manifest + Helm chart generation -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-kubernetes</artifactId>
@@ -59,19 +69,6 @@
       <groupId>io.quarkiverse.helm</groupId>
       <artifactId>quarkus-helm</artifactId>
       <version>1.4.0</version>
-    </dependency>
-
-    <!-- JOSDK Webhooks Framework -->
-    <dependency>
-      <groupId>io.javaoperatorsdk</groupId>
-      <artifactId>kubernetes-webhooks-framework-core</artifactId>
-      <version>${josdk-webhooks.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>io.fabric8</groupId>
-          <artifactId>kubernetes-client</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
 
     <!-- Test -->
@@ -91,7 +88,6 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-
   <build>
     <plugins>
       <plugin>
@@ -113,9 +109,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>${compiler-plugin.version}</version>
         <configuration>
-          <compilerArgs>
-            <arg>-parameters</arg>
-          </compilerArgs>
+          <compilerArgs><arg>-parameters</arg></compilerArgs>
         </configuration>
       </plugin>
       <plugin>
@@ -124,19 +118,15 @@
         <configuration>
           <systemPropertyVariables>
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
-            <maven.home>${maven.home}</maven.home>
           </systemPropertyVariables>
         </configuration>
       </plugin>
     </plugins>
   </build>
-
   <profiles>
     <profile>
       <id>native</id>
-      <activation>
-        <property><name>native</name></property>
-      </activation>
+      <activation><property><name>native</name></property></activation>
       <properties>
         <quarkus.native.enabled>true</quarkus.native.enabled>
         <quarkus.native.container-build>true</quarkus.native.container-build>

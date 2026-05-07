@@ -225,20 +225,20 @@ quarkus.native.native-image-xmx=4g
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: eks-auth-proxy
+      app: eks-dx-auth-proxy
   template:
     metadata:
       labels:
-        app: eks-auth-proxy
+        app: eks-dx-auth-proxy
     spec:
       containers:
-      - name: eks-auth-proxy
-        image: eks-auth-proxy:latest
+      - name: eks-dx-auth-proxy
+        image: eks-dx-auth-proxy:latest
         ports:
         - containerPort: 8080
         env:
@@ -260,10 +260,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
 spec:
   selector:
-    app: eks-auth-proxy
+    app: eks-dx-auth-proxy
   ports:
   - port: 80
     targetPort: 8080

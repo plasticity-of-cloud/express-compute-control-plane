@@ -33,11 +33,11 @@
 - [x] IAM SigV4 signing (JDK crypto, no AWS SDK)
 - [x] Native binary build config
 
-## eks-auth-proxy (Simplified in-cluster proxy)
+## eks-dx-auth-proxy (Simplified in-cluster proxy)
 
 - [x] TokenReview fast-fail + Lambda forwarding (18 tests)
 
-## eks-pod-identity-webhook
+## eks-dx-pod-identity-webhook
 
 - [x] Lambda-based association lookup (10 tests)
 

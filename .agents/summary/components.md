@@ -8,8 +8,8 @@ The EKS-DX Control Plane consists of five major components, each with distinct r
 graph TB
     subgraph "Core Services"
         Lambda[eks-dx-lambda<br/>Authentication Service]
-        Proxy[eks-auth-proxy<br/>In-Cluster Proxy]
-        Webhook[eks-pod-identity-webhook<br/>Admission Controller]
+        Proxy[eks-dx-auth-proxy<br/>In-Cluster Proxy]
+        Webhook[eks-dx-pod-identity-webhook<br/>Admission Controller]
     end
     
     subgraph "Management Tools"
@@ -74,7 +74,7 @@ Native command-line interface for managing clusters and pod identity association
 - **Kubernetes API**: JWKS endpoint discovery
 - **AWS Credentials**: SigV4 signing for API requests
 
-## eks-auth-proxy (In-Cluster Proxy)
+## eks-dx-auth-proxy (In-Cluster Proxy)
 
 ### Purpose
 In-cluster component that provides fast-fail token validation and forwards requests to the Lambda service.
@@ -94,7 +94,7 @@ In-cluster component that provides fast-fail token validation and forwards reque
 - **Kubernetes API**: TokenReview for signature validation
 - **EKS-DX Lambda**: Token forwarding for credential exchange
 
-## eks-pod-identity-webhook (Admission Controller)
+## eks-dx-pod-identity-webhook (Admission Controller)
 
 ### Purpose
 Kubernetes admission webhook that mutates pods to inject AWS credentials environment variables and projected service account tokens.
@@ -184,8 +184,8 @@ sequenceDiagram
 ### Runtime Dependencies
 - **eks-dx-lambda**: DynamoDB, AWS STS, jose4j
 - **eks-dx-cli**: JDK HttpClient, picocli, AWS credentials
-- **eks-auth-proxy**: Kubernetes client, JDK HttpClient
-- **eks-pod-identity-webhook**: Kubernetes client, JDK HttpClient
+- **eks-dx-auth-proxy**: Kubernetes client, JDK HttpClient
+- **eks-dx-pod-identity-webhook**: Kubernetes client, JDK HttpClient
 - **infra**: AWS CDK, AWS SDK
 
 ### Build Dependencies
@@ -200,8 +200,8 @@ sequenceDiagram
 | Component | Key Variables | Purpose |
 |-----------|---------------|---------|
 | eks-dx-lambda | `eks-dx.clusters-table`, `eks-dx.associations-table` | DynamoDB table names |
-| eks-auth-proxy | `EKS_DX_ENDPOINT` | Lambda API Gateway URL |
-| eks-pod-identity-webhook | `EKS_CLUSTER_NAME`, `EKS_DX_ENDPOINT` | Cluster identification and API URL |
+| eks-dx-auth-proxy | `EKS_DX_ENDPOINT` | Lambda API Gateway URL |
+| eks-dx-pod-identity-webhook | `EKS_CLUSTER_NAME`, `EKS_DX_ENDPOINT` | Cluster identification and API URL |
 
 ### Configuration Files
 | Component | File | Purpose |

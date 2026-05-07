@@ -253,7 +253,7 @@ region: us-east-1
 ### Environment Variables Interface
 | Variable | Component | Purpose |
 |----------|-----------|---------|
-| `EKS_DX_ENDPOINT` | eks-auth-proxy, webhook | Lambda API Gateway URL |
+| `EKS_DX_ENDPOINT` | eks-dx-auth-proxy, webhook | Lambda API Gateway URL |
 | `EKS_CLUSTER_NAME` | webhook | Cluster name for association lookups |
 | `AWS_REGION` | All components | AWS region for API calls |
 | `eks-dx.clusters-table` | eks-dx-lambda | DynamoDB clusters table name |

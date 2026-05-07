@@ -1,10 +1,10 @@
-# Migration: eks-auth-proxy → Two-Tier Lambda Architecture
+# Migration: eks-dx-auth-proxy → Two-Tier Lambda Architecture
 
 ## Scope
 
 Split the current monolithic in-cluster proxy into:
 1. **eks-dx-lambda** — Lambda behind API Gateway: JWKS token validation, DynamoDB association lookup, STS AssumeRole, cluster + association management API
-2. **eks-auth-proxy** (simplified) — in-cluster: Kubernetes TokenReview (fast-fail) + forward raw token to Lambda
+2. **eks-dx-auth-proxy** (simplified) — in-cluster: Kubernetes TokenReview (fast-fail) + forward raw token to Lambda
 
 ## What Changes
 
@@ -133,7 +133,7 @@ public class TokenAudienceFilter implements ContainerRequestFilter {
             // Webhook query — validate Bearer token with eks-dx audience
             String token = extractBearer(ctx);
             validateToken(token, "eks-dx.plasticity.cloud",
-                "system:serviceaccount:kube-system:eks-pod-identity-webhook");
+                "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook");
             return;
         }
 
@@ -142,7 +142,7 @@ public class TokenAudienceFilter implements ContainerRequestFilter {
 }
 ```
 
-## Simplified eks-auth-proxy
+## Simplified eks-dx-auth-proxy
 
 ### Dependencies (reduced)
 
@@ -197,15 +197,15 @@ eks-dx.endpoint=${EKS_DX_ENDPOINT:https://eks-dx.us-east-1.plasticity.cloud}
 
 # Kubernetes (TokenReview)
 quarkus.kubernetes-client.trust-certs=true
-quarkus.kubernetes.service-account=eks-auth-proxy
+quarkus.kubernetes.service-account=eks-dx-auth-proxy
 
 # Helm chart
-quarkus.helm.name=eks-auth-proxy
+quarkus.helm.name=eks-dx-auth-proxy
 quarkus.helm.description=EKS-DX in-cluster auth proxy (TokenReview + forward)
 quarkus.helm.create-tar-file=true
 ```
 
-## Simplified eks-pod-identity-webhook
+## Simplified eks-dx-pod-identity-webhook
 
 ### Association Check (Lambda API instead of CRD)
 
@@ -246,7 +246,7 @@ public class PodIdentityAssociationLookup {
 ```yaml
 spec:
   containers:
-  - name: eks-pod-identity-webhook
+  - name: eks-dx-pod-identity-webhook
     volumeMounts:
     - name: eks-dx-token
       mountPath: /var/run/secrets/eks-dx
@@ -355,8 +355,8 @@ Outputs:
 ```
 eks-dx-lambda/                    # Lambda service (NEW)
 eks-dx-cli/                       # CLI tool (REWRITTEN — Lambda API via JDK HttpClient)
-eks-auth-proxy/                   # In-cluster proxy (SIMPLIFIED — TokenReview + forward)
-eks-pod-identity-webhook/         # Webhook (MODIFIED — Lambda API for association check)
+eks-dx-auth-proxy/                   # In-cluster proxy (SIMPLIFIED — TokenReview + forward)
+eks-dx-pod-identity-webhook/         # Webhook (MODIFIED — Lambda API for association check)
 eks-pod-identity-crd/             # DEPRECATED (kept for offline/disconnected mode)
 ```
 
@@ -365,7 +365,7 @@ eks-pod-identity-crd/             # DEPRECATED (kept for offline/disconnected mo
 1. Create `eks-dx-lambda` module with DynamoDB + JWKS validation + STS
 2. Deploy Lambda + API Gateway + DynamoDB tables (SAM)
 3. Rewrite `eks-dx-cli` — Fabric8 for JWKS, JDK HttpClient for Lambda API
-4. Simplify `eks-auth-proxy` — remove STS/DynamoDB/CRD, add HTTP forward to Lambda
-5. Modify `eks-pod-identity-webhook` — projected SA token + Lambda API for association check
+4. Simplify `eks-dx-auth-proxy` — remove STS/DynamoDB/CRD, add HTTP forward to Lambda
+5. Modify `eks-dx-pod-identity-webhook` — projected SA token + Lambda API for association check
 6. Test end-to-end: `eks-dx create cluster` → `eks-dx create pod-identity-association` → pod gets credentials
 7. Deprecate `eks-pod-identity-crd` module

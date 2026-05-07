@@ -1,49 +1,73 @@
 # EKS-DX Control Plane
 
-A Quarkus-based service that replicates the AWS EKS Auth Service (`AssumeRoleForPodIdentity`) for local development and CI/CD environments.
+A serverless service that brings EKS Pod Identity (`AssumeRoleForPodIdentity`) to k3s, microk8s, and EKS-D clusters via a centralized Lambda backend with DynamoDB storage.
 
 ## How It Works
 
-Each request goes through four validation steps mirroring the real EKS Auth flow:
+```
+Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
+  │
+  ├─ 1. TokenReview (fast-fail — K8s API validates JWT signature + audience)
+  │
+  └─ 2. Forward to eks-dx-lambda (via API Gateway)
+       │
+       ├─ 3. JWKS validation (jose4j, DynamoDB-cached JWKS)
+       ├─ 4. Association lookup (DynamoDB: CLUSTER#name / namespace#sa → roleArn)
+       ├─ 5. STS AssumeRole (with session tags from token claims)
+       └─ 6. Return temporary AWS credentials
+```
 
-1. **Pod Identity Association** — looks up the IAM role via `eks:ListPodIdentityAssociations` / `eks:DescribePodIdentityAssociation` (falls back to a Kubernetes ConfigMap, then a generated default)
-2. **Kubernetes TokenReview** — submits the token to the K8s API server, which validates the JWT signature and audience (`pods.eks.amazonaws.com`)
-3. **Signature verification** — handled by the TokenReview above (K8s API server verifies the JWT)
-4. **STS AssumeRole** — assumes the mapped IAM role and returns temporary credentials
+Clusters and pod identity associations are registered via the `eks-dx` CLI, which stores them in DynamoDB through the Lambda API.
 
 ## Quick Start
 
 ### Prerequisites
 - Java 21+
 - Maven 3.8+
-- AWS credentials (`~/.aws` or environment) with `eks:*`, `sts:AssumeRole` permissions
+- AWS credentials with `sts:AssumeRole` and DynamoDB access
 - Kubernetes cluster accessible via `~/.kube/config`
 
 ### Build and Run
 
 ```bash
-# Development mode
-mvn -pl eks-auth-proxy compile quarkus:dev
+# Lambda (dev mode)
+mvn -pl eks-dx-lambda compile quarkus:dev
 
-# JVM build
-mvn -pl eks-auth-proxy package
-java -jar eks-auth-proxy/target/quarkus-app/quarkus-run.jar
+# Proxy (dev mode)
+mvn -pl eks-dx-auth-proxy compile quarkus:dev
 
-# Docker
-docker run -p 8080:8080 \
-  -e AWS_ACCESS_KEY_ID=... \
-  -e AWS_SECRET_ACCESS_KEY=... \
-  -e AWS_REGION=us-east-1 \
-  eks-dx-control-plane:latest
+# CLI (native binary)
+mvn -pl eks-dx-cli package -Pnative
+
+# Integration tests (requires DynamoDB Local on port 18000)
+docker run -d -p 18000:8000 public.ecr.aws/aws-dynamodb-local/aws-dynamodb-local:latest
+mvn test -Dintegration.dynamodb=true
 ```
 
 ## API
 
-### AssumeRoleForPodIdentity
+### Credential Exchange (called by Pod Identity Agent)
 ```bash
-curl -X POST http://localhost:8080/ \
+curl -X POST http://localhost:8080/clusters/my-cluster/assets \
   -H "Content-Type: application/json" \
-  -d '{"ClusterName": "my-cluster", "Token": "eyJ..."}'
+  -d '{"token": "eyJ..."}'
+```
+
+### Cluster Management (IAM-authenticated)
+```bash
+# Register a cluster (CLI does this automatically)
+POST /clusters  {"name", "issuer", "jwks"}
+GET  /clusters
+GET  /clusters/{name}
+DELETE /clusters/{name}
+```
+
+### Association Management (IAM-authenticated)
+```bash
+POST   /clusters/{name}/pod-identity-associations
+GET    /clusters/{name}/pod-identity-associations
+GET    /clusters/{name}/pod-identity-associations/{id}
+DELETE /clusters/{name}/pod-identity-associations/{id}
 ```
 
 ### Health & Metrics
@@ -55,100 +79,72 @@ curl http://localhost:8080/metrics
 
 ## Configuration
 
-### Pod Identity Associations
+### eks-dx-lambda (application.properties)
 
-Primary source is the AWS EKS API (requires a real cluster with `eks-pod-identity-agent` add-on).
+| Property | Default | Description |
+|----------|---------|-------------|
+| `eks-dx.clusters-table` | `eks-dx-clusters` | DynamoDB table for cluster registrations |
+| `eks-dx.associations-table` | `eks-dx-associations` | DynamoDB table for pod identity associations |
+| `aws.sts.session-duration` | `PT1H` | STS session duration |
 
-Fallback: a Kubernetes ConfigMap:
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: pod-identity-associations
-  namespace: kube-system
-data:
-  "my-cluster:default:my-sa": "arn:aws:iam::123456789012:role/my-role"
-  "my-cluster:ci-cd:*": "arn:aws:iam::123456789012:role/ci-cd-role"
-```
+### eks-dx-auth-proxy (application.properties)
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `eks-dx.endpoint` | `https://eks-dx.plasticity.cloud` | EKS-DX Lambda API Gateway endpoint |
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `AWS_ACCOUNT_ID` | Used for fallback role ARN generation only |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS credentials for EKS + STS calls |
+| `EKS_DX_ENDPOINT` | Lambda API Gateway URL (for eks-dx-auth-proxy) |
+| `EKS_DX_CLUSTERS_TABLE` | DynamoDB clusters table name override |
+| `EKS_DX_ASSOCIATIONS_TABLE` | DynamoDB associations table name override |
 | `AWS_REGION` | AWS region (default: `us-east-1`) |
-
-### Key application.properties
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `eks.pod-identity.configmap.name` | `pod-identity-associations` | Fallback ConfigMap name |
-| `eks.pod-identity.configmap.namespace` | `kube-system` | Fallback ConfigMap namespace |
-| `aws.sts.session-duration` | `PT1H` | STS session duration |
 
 ## CI/CD Integration
 
 ```bash
-export AWS_CONTAINER_CREDENTIALS_FULL_URI=http://eks-auth-proxy:8080/
+export AWS_CONTAINER_CREDENTIALS_FULL_URI=http://eks-dx-auth-proxy:8080/
 export AWS_CONTAINER_AUTHORIZATION_TOKEN="Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
 
 # AWS SDK now uses the proxy automatically
 aws s3 ls
 ```
 
-## Testing
-
-### Unit tests (no AWS required)
-```bash
-mvn -pl eks-auth-proxy test
-```
-
-### Full integration test (provisions real AWS resources)
-
-Requires an EKS cluster with `eks-pod-identity-agent` add-on installed.
-
-```bash
-# Generate a service account token
-kubectl create token <sa> -n <ns> --audience pods.eks.amazonaws.com --duration 3600s
-
-# Run the provisioned integration test
-# Creates IAM role + ECR policy + pod identity association, runs the full flow, then cleans up
-mvn -pl eks-auth-proxy test \
-  -Dintegration.aws=true \
-  -Dintegration.cluster=my-cluster \
-  -Daws.region=ap-south-1
-
-# Run with a real pre-existing token (no AWS provisioning)
-mvn -pl eks-auth-proxy test \
-  -Dintegration.full=true \
-  -Dintegration.cluster=my-cluster \
-  -Dintegration.token=eyJ...
-```
-
 ## Module Structure
 
 ```
-eks-auth-proxy/src/main/java/com/plcloud/eksauth/
-├── resource/
-│   ├── EksAuthResource.java          # POST / endpoint
-│   └── HealthResource.java
-├── service/
-│   ├── TokenValidationService.java   # Kubernetes TokenReview
-│   ├── PodIdentityAssociationService.java  # EKS API + ConfigMap lookup
-│   ├── AwsCredentialService.java     # STS AssumeRole
-│   ├── EksClientProducer.java
-│   └── StsClientProducer.java
-└── model/
-    ├── AssumeRoleForPodIdentityRequest.java
-    └── AssumeRoleForPodIdentityResponse.java
+├── eks-dx-lambda/           # Credential exchange + cluster/association management (Lambda)
+│   └── service/
+│       ├── JwksTokenValidationService  # JWT validation via DynamoDB-cached JWKS
+│       ├── DynamoDbClusterService      # Cluster CRUD (DynamoDB)
+│       ├── DynamoDbAssociationService  # Association CRUD (DynamoDB)
+│       └── AwsCredentialService        # STS AssumeRole
+├── eks-dx-auth-proxy/          # In-cluster proxy (TokenReview + Lambda forwarding)
+│   └── service/
+│       ├── TokenValidationService      # K8s TokenReview (fast-fail)
+│       └── LambdaForwardingService     # Forward to Lambda via API Gateway
+├── eks-dx-cli/              # Native CLI for cluster + association management
+├── eks-dx-pod-identity-webhook/ # K8s admission webhook (injects env vars + token volume)
+├── infra/                   # CDK infrastructure
+└── sam.yaml                 # SAM template (Lambda + DynamoDB + API Gateway)
 ```
+
+## Deployment
+
+- **SAM**: `sam deploy --guided`
+- **CDK**: `cd infra && cdk deploy`
+
+Both deploy: Lambda (Java 21, SnapStart), two DynamoDB tables (PAY_PER_REQUEST), API Gateway (IAM auth on management endpoints), and CloudWatch alarms.
 
 ## Security Notes
 
-- Token signature verification is delegated to the Kubernetes API server via TokenReview
-- Requires AWS credentials with `eks:ListPodIdentityAssociations`, `eks:DescribePodIdentityAssociation`, and `sts:AssumeRole`
-- Deploy in trusted networks only
+- In-cluster proxy validates tokens via Kubernetes TokenReview (fast-fail)
+- Lambda validates JWT signatures independently using DynamoDB-cached JWKS
+- Management endpoints require IAM (SigV4) authentication
+- Requires `sts:AssumeRole` and DynamoDB table access
+- Deploy the proxy in trusted networks only
 
 ## License
 

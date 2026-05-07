@@ -39,25 +39,25 @@ jobs:
 
       - name: Build proxy image
         run: |
-          mvn -B -pl eks-auth-proxy package -DskipTests \
+          mvn -B -pl eks-dx-auth-proxy package -DskipTests \
             -Dquarkus.container-image.build=true \
             -Dquarkus.container-image.push=false \
-            -Dquarkus.container-image.image=eks-auth-proxy:build \
+            -Dquarkus.container-image.image=eks-dx-auth-proxy:build \
             -Dquarkus.jib.platforms=${{ matrix.jib-platform }}
 
       - name: Build webhook image
         run: |
-          mvn -B -pl eks-pod-identity-webhook package -DskipTests \
+          mvn -B -pl eks-dx-pod-identity-webhook package -DskipTests \
             -Dquarkus.container-image.build=true \
             -Dquarkus.container-image.push=false \
-            -Dquarkus.container-image.image=eks-pod-identity-webhook:build \
+            -Dquarkus.container-image.image=eks-dx-pod-identity-webhook:build \
             -Dquarkus.jib.platforms=${{ matrix.jib-platform }}
 
       - name: Save Docker images
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          docker save eks-auth-proxy:build | gzip > eks-auth-proxy-${VERSION}-linux-${{ matrix.arch }}.tar.gz
-          docker save eks-pod-identity-webhook:build | gzip > eks-pod-identity-webhook-${VERSION}-linux-${{ matrix.arch }}.tar.gz
+          docker save eks-dx-auth-proxy:build | gzip > eks-dx-auth-proxy-${VERSION}-linux-${{ matrix.arch }}.tar.gz
+          docker save eks-dx-pod-identity-webhook:build | gzip > eks-dx-pod-identity-webhook-${VERSION}-linux-${{ matrix.arch }}.tar.gz
 
       - name: Build CLI native binary (GraalVM)
         run: |
@@ -73,8 +73,8 @@ jobs:
           name: release-${{ matrix.arch }}
           retention-days: 1
           path: |
-            eks-auth-proxy-*-linux-${{ matrix.arch }}.tar.gz
-            eks-pod-identity-webhook-*-linux-${{ matrix.arch }}.tar.gz
+            eks-dx-auth-proxy-*-linux-${{ matrix.arch }}.tar.gz
+            eks-dx-pod-identity-webhook-*-linux-${{ matrix.arch }}.tar.gz
             eks-dx-cli-*-linux-${{ matrix.arch }}
 
   package:
@@ -97,14 +97,14 @@ jobs:
       - name: Build Helm charts
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          mvn -B -pl eks-auth-proxy package -DskipTests \
+          mvn -B -pl eks-dx-auth-proxy package -DskipTests \
             -Dquarkus.helm.version=${VERSION} \
             -Dquarkus.container-image.build=false
-          mvn -B -pl eks-pod-identity-webhook package -DskipTests \
+          mvn -B -pl eks-dx-pod-identity-webhook package -DskipTests \
             -Dquarkus.helm.version=${VERSION} \
             -Dquarkus.container-image.build=false
-          cp eks-auth-proxy/target/helm/kubernetes/eks-auth-proxy-${VERSION}.tar.gz .
-          cp eks-pod-identity-webhook/target/helm/kubernetes/eks-pod-identity-webhook-${VERSION}.tar.gz .
+          cp eks-dx-auth-proxy/target/helm/kubernetes/eks-dx-auth-proxy-${VERSION}.tar.gz .
+          cp eks-dx-pod-identity-webhook/target/helm/kubernetes/eks-dx-pod-identity-webhook-${VERSION}.tar.gz .
 
       - name: Package SAM template
         run: |
@@ -118,8 +118,8 @@ jobs:
           retention-days: 1
           path: |
             eks-dx-lambda-*.zip
-            eks-auth-proxy-*.tar.gz
-            eks-pod-identity-webhook-*.tar.gz
+            eks-dx-auth-proxy-*.tar.gz
+            eks-dx-pod-identity-webhook-*.tar.gz
             eks-dx-sam-*.tar.gz
 
   release:

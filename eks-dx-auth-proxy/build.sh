@@ -58,7 +58,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Set image name
-IMAGE_NAME="aws-eks-auth-service-proxy"
+IMAGE_NAME="eks-dx-auth-proxy"
 if [[ -n "$REGISTRY" ]]; then
     FULL_IMAGE_NAME="$REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
 else

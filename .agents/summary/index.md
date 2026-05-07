@@ -47,8 +47,8 @@ This is the primary knowledge base index for AI assistants working with the EKS-
 ```mermaid
 graph TB
     CLI[eks-dx-cli<br/>Native CLI Management] --> API[Lambda API Gateway]
-    Proxy[eks-auth-proxy<br/>In-Cluster Proxy] --> API
-    Webhook[eks-pod-identity-webhook<br/>Admission Controller] --> API
+    Proxy[eks-dx-auth-proxy<br/>In-Cluster Proxy] --> API
+    Webhook[eks-dx-pod-identity-webhook<br/>Admission Controller] --> API
     API --> Lambda[eks-dx-lambda<br/>Credential Exchange Service]
     Lambda --> DDB[(DynamoDB<br/>Clusters & Associations)]
     Lambda --> STS[AWS STS<br/>AssumeRole]
@@ -59,8 +59,8 @@ graph TB
 ```
 ├── eks-dx-lambda/           # 🔑 Core credential exchange service
 ├── eks-dx-cli/              # 🛠️ Management CLI (native binary)
-├── eks-auth-proxy/          # 🔄 In-cluster authentication proxy
-├── eks-pod-identity-webhook/ # ⚡ Kubernetes admission webhook
+├── eks-dx-auth-proxy/          # 🔄 In-cluster authentication proxy
+├── eks-dx-pod-identity-webhook/ # ⚡ Kubernetes admission webhook
 ├── infra/                   # 🏗️ CDK infrastructure definitions
 ├── sam.yaml                 # 📋 SAM deployment template
 └── docs/                    # 📚 User guides and setup scripts
@@ -73,8 +73,8 @@ graph TB
 |-----------|------|---------|
 | **Credential Exchange** | `eks-dx-lambda/.../EksAuthResource.java` | Main API endpoint for pod authentication |
 | **Token Validation** | `eks-dx-lambda/.../JwksTokenValidationService.java` | JWT signature verification |
-| **In-Cluster Proxy** | `eks-auth-proxy/.../EksAuthAgentResource.java` | Fast-fail token validation + forwarding |
-| **Webhook Controller** | `eks-pod-identity-webhook/.../WebhookEndpoint.java` | Pod mutation for identity injection |
+| **In-Cluster Proxy** | `eks-dx-auth-proxy/.../EksAuthAgentResource.java` | Fast-fail token validation + forwarding |
+| **Webhook Controller** | `eks-dx-pod-identity-webhook/.../WebhookEndpoint.java` | Pod mutation for identity injection |
 
 ### Management API Entry Points
 | Component | File | Purpose |
@@ -94,7 +94,7 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant Pod
-    participant Proxy as eks-auth-proxy
+    participant Proxy as eks-dx-auth-proxy
     participant Lambda as eks-dx-lambda
     participant DDB as DynamoDB
     participant STS as AWS STS

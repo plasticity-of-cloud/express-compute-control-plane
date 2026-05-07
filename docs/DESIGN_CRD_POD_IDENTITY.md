@@ -7,7 +7,7 @@ Pod identity associations are stored as Kubernetes CRDs (`PodIdentityAssociation
 ## Architecture
 
 ```
-Pod Token → eks-auth-proxy → CRD lookup (local cluster) → STS AssumeRole
+Pod Token → eks-dx-auth-proxy → CRD lookup (local cluster) → STS AssumeRole
                                   ↓ (fallback)
                              generated default role ARN
 ```
@@ -74,8 +74,8 @@ The `--service-account` format is `namespace:serviceaccount`.
 ```
 eks-pod-identity-crd/          # Shared CRD model (PodIdentityAssociation, PodIdentityAssociationSpec)
 eks-d-auth-cli/                # CLI tool (native binary via GraalVM container build)
-eks-auth-proxy/                # Proxy service (CRD lookup in PodIdentityAssociationService)
-eks-pod-identity-webhook/      # Webhook (CRD lookup in PodIdentityAssociationLookup)
+eks-dx-auth-proxy/                # Proxy service (CRD lookup in PodIdentityAssociationService)
+eks-dx-pod-identity-webhook/      # Webhook (CRD lookup in PodIdentityAssociationLookup)
 ```
 
 ## RBAC
@@ -86,7 +86,7 @@ Both the proxy and webhook need cluster-wide CRD read access:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eks-auth-proxy
+  name: eks-dx-auth-proxy
 rules:
 - apiGroups: ["authentication.k8s.io"]
   resources: ["tokenreviews"]

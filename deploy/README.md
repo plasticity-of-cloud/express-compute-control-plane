@@ -9,8 +9,8 @@ graph TB
     subgraph Cluster["k3s / microk8s / EKS-D"]
         Pod["Application Pod"]
         Agent["Pod Identity Agent<br/>169.254.170.23"]
-        Proxy["eks-auth-proxy<br/>(TokenReview + forward)"]
-        Webhook["eks-pod-identity-webhook"]
+        Proxy["eks-dx-auth-proxy<br/>(TokenReview + forward)"]
+        Webhook["eks-dx-pod-identity-webhook"]
         KubeAPI["K8s API Server"]
     end
 
@@ -141,21 +141,21 @@ The target IAM role must trust the Lambda's execution role:
 
 ## Step 5: Deploy In-Cluster Components
 
-### eks-auth-proxy
+### eks-dx-auth-proxy
 
 ```bash
 # Set the Lambda endpoint
 export EKS_DX_ENDPOINT=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com
 
 # Deploy cert-manager resources
-kubectl apply -f eks-auth-proxy/k8s/cert-manager.yaml
+kubectl apply -f eks-dx-auth-proxy/k8s/cert-manager.yaml
 
 # Deploy the proxy
-kubectl apply -f deploy/eks-auth-proxy.yaml
+kubectl apply -f deploy/eks-dx-auth-proxy.yaml
 
 # Or build and deploy via Helm
-mvn -pl eks-auth-proxy package -DskipTests -Dquarkus.container-image.build=true
-helm install eks-auth-proxy eks-auth-proxy/target/helm/kubernetes/eks-auth-proxy \
+mvn -pl eks-dx-auth-proxy package -DskipTests -Dquarkus.container-image.build=true
+helm install eks-dx-auth-proxy eks-dx-auth-proxy/target/helm/kubernetes/eks-dx-auth-proxy \
   -n kube-system --set env.EKS_DX_ENDPOINT=$EKS_DX_ENDPOINT
 ```
 
@@ -168,16 +168,16 @@ helm install eks-pod-identity-agent \
   /tmp/eks-pod-identity-agent/charts/eks-pod-identity-agent \
   --namespace kube-system \
   --set clusterName="my-k3s" \
-  --set "agent.additionalArgs.--endpoint=http://eks-auth-proxy.kube-system.svc.cluster.local:8080" \
+  --set "agent.additionalArgs.--endpoint=http://eks-dx-auth-proxy.kube-system.svc.cluster.local:8080" \
   --set "affinity="
 ```
 
-### eks-pod-identity-webhook
+### eks-dx-pod-identity-webhook
 
 ```bash
-kubectl apply -f eks-pod-identity-webhook/k8s/cert-manager.yaml
-kubectl apply -f eks-pod-identity-webhook/k8s/deployment.yaml
-kubectl apply -f eks-pod-identity-webhook/k8s/mutating-webhook-configuration.yaml
+kubectl apply -f eks-dx-pod-identity-webhook/k8s/cert-manager.yaml
+kubectl apply -f eks-dx-pod-identity-webhook/k8s/deployment.yaml
+kubectl apply -f eks-dx-pod-identity-webhook/k8s/mutating-webhook-configuration.yaml
 ```
 
 ## Step 6: Test
@@ -224,8 +224,8 @@ $CLI update cluster --name my-k3s --refresh-jwks
 ```bash
 # Remove in-cluster components
 helm uninstall eks-pod-identity-agent -n kube-system
-kubectl delete -f deploy/eks-auth-proxy.yaml
-kubectl delete -f eks-pod-identity-webhook/k8s/
+kubectl delete -f deploy/eks-dx-auth-proxy.yaml
+kubectl delete -f eks-dx-pod-identity-webhook/k8s/
 
 # Remove associations and cluster
 $CLI delete pod-identity-association --cluster-name my-k3s --association-id <id>

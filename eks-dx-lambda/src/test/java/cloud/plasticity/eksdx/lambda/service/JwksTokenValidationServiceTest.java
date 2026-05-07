@@ -206,7 +206,7 @@ class JwksTokenValidationServiceTest {
     @Test
     void validateWebhookToken_succeeds_withCorrectSubject() throws Exception {
         mockCluster();
-        String expectedSa = "system:serviceaccount:kube-system:eks-pod-identity-webhook";
+        String expectedSa = "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook";
         String token = createToken(DX_AUDIENCE, ISSUER, expectedSa, 60);
 
         assertDoesNotThrow(() ->
@@ -221,18 +221,18 @@ class JwksTokenValidationServiceTest {
 
         assertThrows(SecurityException.class,
             () -> service.validateWebhookToken(token, CLUSTER,
-                "system:serviceaccount:kube-system:eks-pod-identity-webhook"));
+                "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook"));
     }
 
     @Test
     void validateWebhookToken_throws_whenWrongAudience() throws Exception {
         mockCluster();
         String token = createToken(POD_AUDIENCE, ISSUER,
-            "system:serviceaccount:kube-system:eks-pod-identity-webhook", 60);
+            "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook", 60);
 
         assertThrows(IllegalArgumentException.class,
             () -> service.validateWebhookToken(token, CLUSTER,
-                "system:serviceaccount:kube-system:eks-pod-identity-webhook"));
+                "system:serviceaccount:kube-system:eks-dx-pod-identity-webhook"));
     }
 
     // --- JWKS caching ---
