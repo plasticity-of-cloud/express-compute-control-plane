@@ -1,0 +1,5 @@
+app:
+  imageConfig:
+    registry: 864899852480.dkr.ecr.us-east-1.amazonaws.com
+    repository: plcloud/eks-dx-auth-proxy
+    tag: 1.0.0
