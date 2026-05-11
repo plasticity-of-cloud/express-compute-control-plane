@@ -25,7 +25,7 @@ CLUSTER_NAME="k3s-pod-id"
 INSTANCE_TYPE="t4g.medium"
 KEY_PAIR="k3s-pod-id-key"
 EKS_DX_ENDPOINT=""
-SG_NAME="k3s-pod-id-sg"
+SG_NAME=""  # derived from cluster name after arg parsing
 
 usage() {
   cat <<EOF
@@ -59,6 +59,7 @@ done
 [[ -z "$EKS_DX_ENDPOINT" ]] && err "--eks-dx-endpoint is required"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+SG_NAME="${CLUSTER_NAME}-sg"
 log "Account: $ACCOUNT_ID  Region: $REGION  Cluster: $CLUSTER_NAME"
 
 # ── 0. Key pair ──────────────────────────────────────────────────────
