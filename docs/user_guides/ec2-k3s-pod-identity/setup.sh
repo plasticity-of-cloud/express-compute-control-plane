@@ -105,7 +105,6 @@ apt-get update -qq && apt-get install -y -qq curl jq git > /dev/null
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -
 mkdir -p /home/ubuntu/.kube
 cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
-sed -i 's/127.0.0.1/0.0.0.0/' /home/ubuntu/.kube/config
 chown -R ubuntu:ubuntu /home/ubuntu/.kube
 chmod 600 /home/ubuntu/.kube/config
 echo "export KUBECONFIG=/home/ubuntu/.kube/config" >> /home/ubuntu/.bashrc
