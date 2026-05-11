@@ -5,10 +5,12 @@
 # Prerequisites:
 #   - Lambda backend deployed (sam deploy)
 #   - AWS CLI v2 configured
+#   - helm 3 installed locally
 #
 # Usage:
 #   ./setup.sh --key-pair my-key --region us-east-1 \
-#     --eks-dx-endpoint https://xxx.execute-api.us-east-1.amazonaws.com/prod
+#     --eks-dx-endpoint https://xxx.execute-api.us-east-1.amazonaws.com/prod \
+#     --version 1.0.0
 #
 # The key pair will be created automatically if it does not exist.
 # The private key is saved to ./<key-pair-name>.pem
@@ -25,6 +27,8 @@ CLUSTER_NAME="eks-dx-control-plane-k3s"
 INSTANCE_TYPE="t4g.medium"
 KEY_PAIR="k3s-pod-id-key"
 EKS_DX_ENDPOINT=""
+EKS_DX_VERSION=""          # e.g. 1.0.0 — pulls from GHCR when set
+GITHUB_ORG="plasticity-of-cloud"
 SG_NAME=""  # derived from cluster name after arg parsing
 
 usage() {
@@ -36,6 +40,8 @@ Required:
   --eks-dx-endpoint URL     EKS-DX Lambda API endpoint
 
 Options:
+  --version VERSION         EKS-DX release version to deploy from GHCR (e.g. 1.0.0)
+                            If omitted, in-cluster components are NOT installed automatically.
   --region REGION           AWS region            (default: $REGION)
   --cluster-name NAME       Cluster name          (default: $CLUSTER_NAME)
   --instance-type TYPE      EC2 instance type     (default: $INSTANCE_TYPE)
@@ -48,6 +54,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --key-pair)         KEY_PAIR="$2";         shift 2 ;;
     --eks-dx-endpoint)  EKS_DX_ENDPOINT="$2";  shift 2 ;;
+    --version)          EKS_DX_VERSION="$2";   shift 2 ;;
     --region)           REGION="$2";           shift 2 ;;
     --cluster-name)     CLUSTER_NAME="$2";     shift 2 ;;
     --instance-type)    INSTANCE_TYPE="$2";    shift 2 ;;
@@ -156,6 +163,39 @@ scp -i "${KEY_PAIR}.pem" -o StrictHostKeyChecking=no \
 sed -i "s|https://127.0.0.1:6443|https://${PUBLIC_IP}:6443|g" "$KUBECONFIG_PATH"
 log "Kubeconfig ready: $KUBECONFIG_PATH"
 
+# ── 4. Install in-cluster components from GHCR (if --version supplied) ──
+if [[ -n "$EKS_DX_VERSION" ]]; then
+  log "Installing eks-dx-auth-proxy v${EKS_DX_VERSION} from GHCR ..."
+  HELM_REGISTRY="oci://ghcr.io/${GITHUB_ORG}/helm"
+  export KUBECONFIG="$KUBECONFIG_PATH"
+
+  # cert-manager (required for webhook TLS)
+  kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+  kubectl wait --for=condition=Available deployment/cert-manager-webhook \
+    -n cert-manager --timeout=120s
+
+  helm install eks-dx-auth-proxy "${HELM_REGISTRY}/eks-dx-auth-proxy" \
+    --version "${EKS_DX_VERSION}" \
+    --namespace kube-system \
+    --set app.imageConfig.registry=ghcr.io \
+    --set app.imageConfig.repository="${GITHUB_ORG}/eks-dx-auth-proxy" \
+    --set app.imageConfig.tag="${EKS_DX_VERSION}" \
+    --set "app.envs.EKS_DX_ENDPOINT=${EKS_DX_ENDPOINT}" \
+    --set "app.envs.AWS_REGION=${REGION}"
+
+  helm install eks-dx-pod-identity-webhook "${HELM_REGISTRY}/eks-dx-pod-identity-webhook" \
+    --version "${EKS_DX_VERSION}" \
+    --namespace kube-system \
+    --set app.imageConfig.registry=ghcr.io \
+    --set app.imageConfig.repository="${GITHUB_ORG}/eks-dx-pod-identity-webhook" \
+    --set app.imageConfig.tag="${EKS_DX_VERSION}" \
+    --set "app.envs.EKS_DX_ENDPOINT=${EKS_DX_ENDPOINT}" \
+    --set "app.envs.EKS_CLUSTER_NAME=${CLUSTER_NAME}" \
+    --set "app.envs.AWS_REGION=${REGION}"
+
+  log "In-cluster components installed."
+fi
+
 cat <<SUMMARY
 
 ${GREEN}═══════════════════════════════════════════════════════════════${NC}
@@ -175,16 +215,21 @@ ${GREEN}════════════════════════
        eks-dx configure --endpoint ${EKS_DX_ENDPOINT} --region ${REGION}
        eks-dx create cluster --name ${CLUSTER_NAME} --region ${REGION}
 
-  2. SSH in if needed:
-       ssh -i ${KEY_PAIR}.pem ubuntu@${PUBLIC_IP}
-
-  3. Create associations:
+  2. Create associations:
        eks-dx create pod-identity-association \\
          --cluster-name ${CLUSTER_NAME} \\
          --namespace default --service-account my-app \\
          --role-arn arn:aws:iam::${ACCOUNT_ID}:role/eks-dx-pod-my-app
 
-  4. Deploy in-cluster components (proxy, agent, webhook)
-     See: docs/user_guides/ec2-k3s-pod-identity/README.md
+$(if [[ -z "$EKS_DX_VERSION" ]]; then
+  echo "  3. Deploy in-cluster components:"
+  echo "       See: docs/user_guides/ec2-k3s-pod-identity/README.md"
+  echo "       Or re-run with --version <version> to install from GHCR automatically."
+else
+  echo "  In-cluster components (auth-proxy, webhook) installed from GHCR v${EKS_DX_VERSION}."
+  echo "  3. Deploy EKS Pod Identity Agent — see README.md step 5."
+fi)
+
+  SSH: ssh -i ${KEY_PAIR}.pem ubuntu@${PUBLIC_IP}
 
 SUMMARY
