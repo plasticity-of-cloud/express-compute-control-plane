@@ -35,6 +35,14 @@ public class EksAuthAgentResource {
 
     @POST
     @Path("/{clusterName}/assets")
+    public Response assumeRoleForPodIdentityAssets(
+            @PathParam("clusterName") String clusterName,
+            AgentRequest request) {
+        return assumeRoleForPodIdentity(clusterName, request);
+    }
+
+    @POST
+    @Path("/{clusterName}/assume-role-for-pod-identity")
     public Response assumeRoleForPodIdentity(
             @PathParam("clusterName") String clusterName,
             AgentRequest request) {

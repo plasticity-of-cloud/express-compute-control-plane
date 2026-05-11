@@ -102,7 +102,8 @@ read -r -d '' USERDATA <<'CLOUD_INIT' || true
 #!/bin/bash
 set -e
 apt-get update -qq && apt-get install -y -qq curl jq git > /dev/null
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -
+PUBLIC_IP=$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4)
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --tls-san ${PUBLIC_IP}" sh -
 mkdir -p /home/ubuntu/.kube
 cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
 chown -R ubuntu:ubuntu /home/ubuntu/.kube
@@ -136,6 +137,25 @@ PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
 
 log "Instance ready: $PUBLIC_IP"
 
+# ── 3. Fetch kubeconfig (wait for k3s to be ready) ───────────────────
+KUBECONFIG_PATH="/tmp/${CLUSTER_NAME}-kubeconfig.yaml"
+log "Waiting for k3s to start (up to 3 min) ..."
+for i in $(seq 1 18); do
+  if ssh -i "${KEY_PAIR}.pem" -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+       "ubuntu@${PUBLIC_IP}" "test -f /etc/rancher/k3s/k3s.yaml" 2>/dev/null; then
+    break
+  fi
+  sleep 10
+done
+
+log "Fetching kubeconfig → $KUBECONFIG_PATH"
+scp -i "${KEY_PAIR}.pem" -o StrictHostKeyChecking=no \
+  "ubuntu@${PUBLIC_IP}:/etc/rancher/k3s/k3s.yaml" "$KUBECONFIG_PATH"
+
+# Patch: replace loopback with public IP (cert now has IP SAN, so CA trust works)
+sed -i "s|https://127.0.0.1:6443|https://${PUBLIC_IP}:6443|g" "$KUBECONFIG_PATH"
+log "Kubeconfig ready: $KUBECONFIG_PATH"
+
 cat <<SUMMARY
 
 ${GREEN}═══════════════════════════════════════════════════════════════${NC}
@@ -146,15 +166,17 @@ ${GREEN}════════════════════════
   Region:    $REGION
   Cluster:   $CLUSTER_NAME
   Endpoint:  $EKS_DX_ENDPOINT
+  Kubeconfig: $KUBECONFIG_PATH
 
   ${YELLOW}Next steps:${NC}
 
-  1. SSH in (wait ~2 min for cloud-init):
-       ssh -i ${KEY_PAIR}.pem ubuntu@${PUBLIC_IP}
-
-  2. Register the cluster:
+  1. Register the cluster:
+       export KUBECONFIG=$KUBECONFIG_PATH
        eks-dx configure --endpoint ${EKS_DX_ENDPOINT} --region ${REGION}
        eks-dx create cluster --name ${CLUSTER_NAME} --region ${REGION}
+
+  2. SSH in if needed:
+       ssh -i ${KEY_PAIR}.pem ubuntu@${PUBLIC_IP}
 
   3. Create associations:
        eks-dx create pod-identity-association \\

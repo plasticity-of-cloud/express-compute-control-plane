@@ -55,7 +55,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: eks-dx-auth-proxy
-        image: 864899852480.dkr.ecr.us-east-1.amazonaws.com/plcloud/eks-dx-auth-proxy:latest
+        image: 864899852480.dkr.ecr.us-east-1.amazonaws.com/plcloud/eks-dx-auth-proxy:1.0.0
         ports:
         - containerPort: 8443
           name: https

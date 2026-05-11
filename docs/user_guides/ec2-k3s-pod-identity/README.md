@@ -87,11 +87,21 @@ aws ec2 run-instances \
   --key-name my-key \
   --user-data '#!/bin/bash
     apt-get update -qq && apt-get install -y -qq curl
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb" sh -
+    PUBLIC_IP=$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4)
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable traefik --disable servicelb --tls-san ${PUBLIC_IP}" sh -
     mkdir -p /home/ubuntu/.kube
     cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
     chown -R ubuntu:ubuntu /home/ubuntu/.kube'
 ```
+
+After fetching the kubeconfig, replace the loopback address with the public IP:
+```bash
+scp -i my-key.pem ubuntu@<ip>:/etc/rancher/k3s/k3s.yaml /tmp/my-k3s-kubeconfig.yaml
+sed -i "s|https://127.0.0.1:6443|https://<ip>:6443|g" /tmp/my-k3s-kubeconfig.yaml
+export KUBECONFIG=/tmp/my-k3s-kubeconfig.yaml
+```
+
+> **Note:** The `--tls-san <public-ip>` flag ensures the k3s server TLS cert includes the public IP as a Subject Alternative Name, so the kubeconfig CA trust works without `insecure-skip-tls-verify`. See [k3s server `--tls-san` docs](https://docs.k3s.io/cli/server#listeners).
 
 SSH in and verify:
 ```bash
@@ -252,3 +262,11 @@ aws iam delete-role --role-name eks-dx-pod-my-app
 # Lambda backend (optional — shared across clusters)
 # sam delete --stack-name eks-dx
 ```
+
+## References
+
+- [k3s server CLI — `--tls-san` flag](https://docs.k3s.io/cli/server#listeners)
+- [k3s certificate management](https://docs.k3s.io/advanced#certificate-management)
+- [k3s installation configuration](https://docs.k3s.io/installation/configuration)
+- [EKS Pod Identity Agent](https://github.com/aws/eks-pod-identity-agent)
+- [cert-manager](https://cert-manager.io/docs/installation/)
