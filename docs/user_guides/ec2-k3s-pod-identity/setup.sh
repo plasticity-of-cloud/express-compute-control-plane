@@ -8,12 +8,11 @@
 #   - helm 3 installed locally
 #
 # Usage:
-#   ./setup.sh --key-pair my-key --region us-east-1 \
-#     --eks-dx-endpoint https://xxx.execute-api.us-east-1.amazonaws.com/prod \
+#   ./setup.sh --eks-dx-endpoint https://xxx.execute-api.us-east-1.amazonaws.com/prod \
 #     --version 1.0.0
 #
-# The key pair will be created automatically if it does not exist.
-# The private key is saved to ./<key-pair-name>.pem
+# All AWS resources (key pair, security group, EC2 instance) are named after --cluster-name.
+# The private key is saved to ./<cluster-name>.pem
 #
 set -euo pipefail
 
@@ -23,27 +22,27 @@ warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
 
 REGION="${AWS_REGION:-us-east-1}"
-CLUSTER_NAME="eks-dx-control-plane-k3s"
+CLUSTER_NAME="eks-dx-k3s"
 INSTANCE_TYPE="t4g.medium"
-KEY_PAIR="k3s-pod-id-key"
 EKS_DX_ENDPOINT=""
 EKS_DX_VERSION=""          # e.g. 1.0.0 — pulls from GHCR when set
 GITHUB_ORG="plasticity-of-cloud"
 SG_NAME=""  # derived from cluster name after arg parsing
+KEY_PAIR=""  # derived from cluster name after arg parsing
 
 usage() {
   cat <<EOF
-Usage: $0 --key-pair NAME --eks-dx-endpoint URL [OPTIONS]
+Usage: $0 --eks-dx-endpoint URL [OPTIONS]
 
 Required:
-  --key-pair NAME           EC2 key pair name (created if absent, default: k3s-pod-id-key)
   --eks-dx-endpoint URL     EKS-DX Lambda API endpoint
 
 Options:
+  --cluster-name NAME       Cluster name          (default: $CLUSTER_NAME)
+                            Also used as prefix for key-pair, security group, and EC2 hostname.
   --version VERSION         EKS-DX release version to deploy from GHCR (e.g. 1.0.0)
                             If omitted, in-cluster components are NOT installed automatically.
   --region REGION           AWS region            (default: $REGION)
-  --cluster-name NAME       Cluster name          (default: $CLUSTER_NAME)
   --instance-type TYPE      EC2 instance type     (default: $INSTANCE_TYPE)
   --help                    Show this help
 EOF
@@ -52,7 +51,6 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --key-pair)         KEY_PAIR="$2";         shift 2 ;;
     --eks-dx-endpoint)  EKS_DX_ENDPOINT="$2";  shift 2 ;;
     --version)          EKS_DX_VERSION="$2";   shift 2 ;;
     --region)           REGION="$2";           shift 2 ;;
@@ -66,6 +64,7 @@ done
 [[ -z "$EKS_DX_ENDPOINT" ]] && err "--eks-dx-endpoint is required"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+KEY_PAIR="${CLUSTER_NAME}"
 SG_NAME="${CLUSTER_NAME}-sg"
 log "Account: $ACCOUNT_ID  Region: $REGION  Cluster: $CLUSTER_NAME"
 
