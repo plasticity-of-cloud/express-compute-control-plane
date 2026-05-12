@@ -24,7 +24,7 @@ public class JwksTokenValidationService {
 
     private static final Logger LOG = Logger.getLogger(JwksTokenValidationService.class);
     private static final String EKS_POD_IDENTITY_AUDIENCE = "pods.eks.amazonaws.com";
-    private static final String EKS_DX_AUDIENCE = "eks-dx.plasticity.cloud";
+    private static final String EKS_DX_AUDIENCE = "eks-dx.codriverlabs.ai";
     private static final long JWKS_CACHE_TTL_SECONDS = 300; // 5 minutes
 
     @Inject
@@ -46,7 +46,7 @@ public class JwksTokenValidationService {
 
     /**
      * Validate a webhook SA token for management API access.
-     * Audience: eks-dx.plasticity.cloud
+     * Audience: eks-dx.codriverlabs.ai
      */
     public void validateWebhookToken(String token, String clusterName, String expectedSubject) {
         JsonWebToken jwt = validateJwt(token, clusterName, EKS_DX_AUDIENCE);

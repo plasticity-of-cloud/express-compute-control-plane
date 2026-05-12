@@ -124,7 +124,7 @@ No AWS SDK in the CLI. All AWS interactions go through the Lambda API.
 
 ```
 eks-dx-cli/
-  src/main/java/cloud/plasticity/eksdx/cli/
+  src/main/java/ai/codriverlabs/eksdx/cli/
     EksDxCommand.java                          # Top-level command group
     cluster/
       CreateClusterCommand.java                # create cluster

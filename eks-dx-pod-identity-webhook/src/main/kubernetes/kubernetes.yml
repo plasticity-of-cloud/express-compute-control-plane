@@ -3,10 +3,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: eks-dx-pod-identity-webhook
-rules:
-- apiGroups: ["eks.plasticity.cloud"]
-  resources: ["podidentityassociations"]
-  verbs: ["get", "list", "watch"]
+rules: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

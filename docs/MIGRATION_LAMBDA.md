@@ -78,7 +78,7 @@ DELETE /clusters/{name}/pod-identity-associations/{id}         (delete)
 ### Service Layer
 
 ```
-cloud.plasticity.eksdx.lambda/
+ai.codriverlabs.eksdx.lambda/
   resource/
     EksAuthResource.java              # POST /clusters/{name}/assets
     ClusterResource.java              # Cluster CRUD

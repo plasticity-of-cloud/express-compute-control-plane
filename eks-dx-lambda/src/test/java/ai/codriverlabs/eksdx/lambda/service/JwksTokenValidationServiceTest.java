@@ -26,7 +26,7 @@ class JwksTokenValidationServiceTest {
     private static final String CLUSTER = "test-cluster";
     private static final String ISSUER = "https://oidc.example.com";
     private static final String POD_AUDIENCE = "pods.eks.amazonaws.com";
-    private static final String DX_AUDIENCE = "eks-dx.plasticity.cloud";
+    private static final String DX_AUDIENCE = "eks-dx.codriverlabs.ai";
 
     private static RsaJsonWebKey rsaKey;
     private static String jwksJson;

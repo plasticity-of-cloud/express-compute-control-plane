@@ -23,7 +23,7 @@ public class EksDxConfig {
     public String getEndpoint() {
         String env = System.getenv("EKS_DX_ENDPOINT");
         if (env != null && !env.isBlank()) return env;
-        return props.getProperty("endpoint", "https://eks-dx.plasticity.cloud");
+        return props.getProperty("endpoint", "https://eks-dx.codriverlabs.ai");
     }
 
     public String getRegion() {

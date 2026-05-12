@@ -246,7 +246,7 @@ graph LR
 ### CLI Configuration
 ```yaml
 # ~/.eks-dx/config
-endpoint: https://api.eks-dx.plasticity.cloud
+endpoint: https://api.eks-dx.codriverlabs.ai
 region: us-east-1
 ```
 

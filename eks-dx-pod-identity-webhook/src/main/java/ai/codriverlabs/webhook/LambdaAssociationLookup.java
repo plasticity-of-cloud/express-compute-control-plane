@@ -13,7 +13,7 @@ import java.nio.file.Path;
 
 /**
  * Looks up Pod Identity Associations via the EKS-DX Lambda API.
- * Authenticates using a projected SA token with audience eks-dx.plasticity.cloud.
+ * Authenticates using a projected SA token with audience eks-dx.codriverlabs.ai.
  */
 @ApplicationScoped
 public class LambdaAssociationLookup {

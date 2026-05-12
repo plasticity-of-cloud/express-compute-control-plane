@@ -6,30 +6,30 @@ This is a **multi-module Quarkus + CDK project** providing EKS Pod Identity auth
 
 ```
 ├── eks-dx-lambda/           # 🔑 Core credential exchange service
-│   └── src/main/java/cloud/plasticity/eksdx/lambda/
+│   └── src/main/java/ai/codriverlabs/eksdx/lambda/
 │       ├── auth/            # WebhookAuthFilter (SA token audience check)
 │       ├── model/           # TokenClaims record
 │       ├── resource/        # REST endpoints (EksAuthResource, ClusterResource, AssociationResource)
 │       └── service/         # DynamoDbClusterService, DynamoDbAssociationService,
 │                            # JwksTokenValidationService, AwsCredentialService
 ├── eks-dx-cli/              # 🛠️ Native CLI for cluster + association management
-│   └── src/main/java/cloud/plasticity/eksdx/cli/
+│   └── src/main/java/ai/codriverlabs/eksdx/cli/
 │       ├── cluster/         # CreateCluster, Describe, List, Update, Delete commands
 │       ├── association/     # CreateAssociation, Describe, List, Delete commands
 │       ├── config/          # ConfigureCommand, EksDxConfig (~/.eks-dx/config)
 │       └── util/            # EksDxApiClient (JDK HttpClient), AwsSigV4Signer
 ├── eks-dx-auth-proxy/          # 🔄 In-cluster proxy (TokenReview + Lambda forwarding)
-│   └── src/main/java/cloud/plasticity/eksauth/
+│   └── src/main/java/ai/codriverlabs/eksauth/
 │       ├── resource/        # EksAuthAgentResource (POST /clusters/{name}/assets)
 │       └── service/         # TokenValidationService (K8s TokenReview),
 │                            # LambdaForwardingService (JDK HttpClient → Lambda)
 ├── eks-dx-pod-identity-webhook/ # ⚡ Kubernetes admission webhook
-│   └── src/main/java/cloud/plasticity/webhook/
+│   └── src/main/java/ai/codriverlabs/webhook/
 │       ├── WebhookEndpoint.java        # POST /mutate
 │       ├── PodIdentityMutator.java     # Injects env vars + projected token volume
 │       └── LambdaAssociationLookup.java # Queries Lambda API for associations
 ├── infra/                   # 🏗️ CDK infrastructure (alternative to SAM)
-│   └── src/main/java/cloud/plasticity/eksdx/infra/
+│   └── src/main/java/ai/codriverlabs/eksdx/infra/
 │       ├── InfraApp.java    # CDK app entry point
 │       └── EksDxStack.java  # Lambda, DynamoDB, API Gateway, CloudWatch alarms
 ├── sam.yaml                 # 📋 SAM template (Lambda + DynamoDB + API Gateway)
@@ -123,8 +123,8 @@ mvn test -Dintegration.dynamodb=true
 
 | Context | Convention | Example |
 |---------|-----------|---------|
-| Java packages | `cloud.plasticity.*` | `cloud.plasticity.eksdx.lambda.service` |
-| Maven groupId | `cloud.plasticity` | `<groupId>cloud.plasticity</groupId>` |
+| Java packages | `ai.codriverlabs.*` | `ai.codriverlabs.eksdx.lambda.service` |
+| Maven groupId | `ai.codriverlabs` | `<groupId>ai.codriverlabs</groupId>` |
 | CLI config | `~/.eks-dx/config` | endpoint, region |
 | Container images | `codriverlabs.ai/` prefix or ECR | `codriverlabs.ai/eks-dx-auth-proxy` |
 | API Gateway | `eks-dx.codriverlabs.ai` | Custom domain (optional) |

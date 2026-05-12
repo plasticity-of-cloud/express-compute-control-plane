@@ -5,7 +5,7 @@
 ### ✅ Consistent Elements
 
 **Naming Conventions**:
-- All components use consistent `cloud.plasticity.eksdx` package naming
+- All components use consistent `ai.codriverlabs.eksdx` package naming
 - API endpoints follow RESTful conventions
 - Environment variables use consistent prefixes (`EKS_DX_`, `eks-dx.`)
 - Database table naming follows pattern: `eks-dx-{resource-type}`
