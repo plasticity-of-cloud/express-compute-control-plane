@@ -283,7 +283,7 @@ public class TenantProvisioningService {
                 {
                   "Effect": "Allow",
                   "Action": "execute-api:Invoke",
-                  "Resource": "arn:aws:execute-api:%s:%s:*/*/POST/clusters"
+                  "Resource": "arn:aws:execute-api:%s:%s:*/*/POST/clusters/%s"
                 },
                 {
                   "Effect": "Allow",
@@ -296,7 +296,7 @@ public class TenantProvisioningService {
               ]
             }
             """.formatted(region, accountId, tenantId,
-                          region, accountId,
+                          region, accountId, tenantId,
                           region, accountId, tenantId);
     }
 
