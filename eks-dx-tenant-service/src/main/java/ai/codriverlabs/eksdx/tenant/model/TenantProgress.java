@@ -2,6 +2,7 @@ package ai.codriverlabs.eksdx.tenant.model;
 
 /**
  * SSE event payload for GET /tenants/{id}/stream.
+ * sshPrivateKey is populated only when state == "ready".
  */
 public record TenantProgress(
     String state,
@@ -9,5 +10,6 @@ public record TenantProgress(
     int progress,
     String publicIp,
     long elapsed,
-    String error
+    String error,
+    String sshPrivateKey
 ) {}

@@ -32,6 +32,7 @@ import software.amazon.awssdk.services.iam.model.PutRolePolicyRequest;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 import software.amazon.awssdk.services.secretsmanager.model.CreateSecretRequest;
 import software.amazon.awssdk.services.secretsmanager.model.DeleteSecretRequest;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
 import software.amazon.awssdk.services.sts.StsClient;
 import software.amazon.awssdk.services.sts.model.GetCallerIdentityRequest;
 
@@ -171,8 +172,14 @@ public class TenantProvisioningService {
         TenantItem item = getState(tenantId);
         long elapsed = Instant.now().getEpochSecond()
             - Instant.parse(item.updatedAt()).getEpochSecond();
+        String sshPrivateKey = null;
+        if ("ready".equals(item.state()) && item.sshKeySecretArn() != null) {
+            sshPrivateKey = secretsManager.getSecretValue(
+                GetSecretValueRequest.builder().secretId(item.sshKeySecretArn()).build()
+            ).secretString();
+        }
         return new TenantProgress(item.state(), item.phase(), item.progress(),
-            item.publicIp(), elapsed, item.error());
+            item.publicIp(), elapsed, item.error(), sshPrivateKey);
     }
 
     // -------------------------------------------------------------------------

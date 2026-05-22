@@ -227,6 +227,7 @@ Resources:
             Action:
               - secretsmanager:CreateSecret
               - secretsmanager:DeleteSecret
+              - secretsmanager:GetSecretValue
             Resource: "arn:aws:secretsmanager:*:*:secret:eks-dx/tenant/*"
         - Statement:
             Effect: Allow
