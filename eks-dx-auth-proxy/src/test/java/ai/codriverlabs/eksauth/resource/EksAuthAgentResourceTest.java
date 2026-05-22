@@ -1,6 +1,6 @@
 package ai.codriverlabs.eksauth.resource;
 
-import ai.codriverlabs.eksauth.service.LambdaForwardingService;
+import ai.codriverlabs.eksauth.service.EksDxCredentialServiceClient;
 import ai.codriverlabs.eksauth.service.TokenValidationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,7 +17,7 @@ import static org.mockito.Mockito.*;
 class EksAuthAgentResourceTest {
 
     @Mock TokenValidationService tokenValidationService;
-    @Mock LambdaForwardingService forwardingService;
+    @Mock EksDxCredentialServiceClient forwardingService;
 
     EksAuthAgentResource resource;
 
@@ -34,7 +34,7 @@ class EksAuthAgentResourceTest {
             .thenReturn(new TokenValidationService.TokenClaims(
                 "default", "my-sa", null, null, null, "system:serviceaccount:default:my-sa", null));
         when(forwardingService.forward(eq("cluster"), any()))
-            .thenReturn(new LambdaForwardingService.ForwardResult(200, "{\"credentials\":{}}"));
+            .thenReturn(new EksDxCredentialServiceClient.ForwardResult(200, "{\"credentials\":{}}"));
 
         var req = new EksAuthAgentResource.AgentRequest();
         req.token = "valid-token";
@@ -50,7 +50,7 @@ class EksAuthAgentResourceTest {
             .thenReturn(new TokenValidationService.TokenClaims(
                 "default", "my-sa", null, null, null, "system:serviceaccount:default:my-sa", null));
         when(forwardingService.forward(eq("cluster"), any()))
-            .thenReturn(new LambdaForwardingService.ForwardResult(200, "{}"));
+            .thenReturn(new EksDxCredentialServiceClient.ForwardResult(200, "{}"));
 
         var req = new EksAuthAgentResource.AgentRequest();
         req.token = "valid-token";
@@ -137,7 +137,7 @@ class EksAuthAgentResourceTest {
             .thenReturn(new TokenValidationService.TokenClaims(
                 "default", "my-sa", null, null, null, "system:serviceaccount:default:my-sa", null));
         when(forwardingService.forward(eq("cluster"), any()))
-            .thenReturn(new LambdaForwardingService.ForwardResult(404,
+            .thenReturn(new EksDxCredentialServiceClient.ForwardResult(404,
                 "{\"__type\":\"NotFoundException\",\"message\":\"No association\"}"));
 
         var req = new EksAuthAgentResource.AgentRequest();

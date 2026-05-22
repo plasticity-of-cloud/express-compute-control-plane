@@ -1,6 +1,6 @@
 package ai.codriverlabs.eksauth.resource;
 
-import ai.codriverlabs.eksauth.service.LambdaForwardingService;
+import ai.codriverlabs.eksauth.service.EksDxCredentialServiceClient;
 import ai.codriverlabs.eksauth.service.TokenValidationService;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -27,7 +27,7 @@ public class EksAuthAgentResource {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject TokenValidationService tokenValidationService;
-    @Inject LambdaForwardingService forwardingService;
+    @Inject EksDxCredentialServiceClient forwardingService;
 
     public static class AgentRequest {
         @JsonProperty("token") public String token;
@@ -58,7 +58,7 @@ public class EksAuthAgentResource {
 
             // 2. Forward to Lambda for full credential exchange
             String body = MAPPER.writeValueAsString(Map.of("token", request.token));
-            LambdaForwardingService.ForwardResult result =
+            EksDxCredentialServiceClient.ForwardResult result =
                 forwardingService.forward(clusterName, body);
 
             return Response.status(result.statusCode())

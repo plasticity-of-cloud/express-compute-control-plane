@@ -18,9 +18,9 @@ import java.nio.file.Path;
  * a legitimate proxy inside the registered cluster.
  */
 @ApplicationScoped
-public class LambdaForwardingService {
+public class EksDxCredentialServiceClient {
 
-    private static final Logger LOG = Logger.getLogger(LambdaForwardingService.class);
+    private static final Logger LOG = Logger.getLogger(EksDxCredentialServiceClient.class);
     private static final String PROXY_TOKEN_PATH = "/var/run/secrets/eks-dx/token";
 
     private final HttpClient httpClient = HttpClient.newHttpClient();

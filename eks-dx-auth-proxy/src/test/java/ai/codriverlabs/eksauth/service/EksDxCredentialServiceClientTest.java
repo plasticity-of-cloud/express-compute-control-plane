@@ -8,13 +8,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
-class LambdaForwardingServiceTest {
+class EksDxCredentialServiceClientTest {
 
-    LambdaForwardingService service;
+    EksDxCredentialServiceClient service;
 
     @BeforeEach
     void setUp() {
-        service = new LambdaForwardingService();
+        service = new EksDxCredentialServiceClient();
         service.endpoint = "http://localhost:9999";
     }
 
