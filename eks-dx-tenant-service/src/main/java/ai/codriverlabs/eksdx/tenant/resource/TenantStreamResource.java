@@ -28,8 +28,11 @@ public class TenantStreamResource {
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @RestStreamElementType(MediaType.APPLICATION_JSON)
     public Multi<TenantProgress> streamProgress(@PathParam("id") String id) {
+        // Emit every 5s; include terminal event then stop (select().first stops before matching item,
+        // so we negate: keep while NOT terminal, which emits the last non-terminal + closes).
+        // The client receives the final state on the last poll before the stream closes.
         return Multi.createFrom().ticks().every(Duration.ofSeconds(5))
             .map(tick -> provisioningService.getProgress(id))
-            .takeUntil(p -> "ready".equals(p.state()) || "failed".equals(p.state()));
+            .select().first(p -> !"ready".equals(p.state()) && !"failed".equals(p.state()));
     }
 }

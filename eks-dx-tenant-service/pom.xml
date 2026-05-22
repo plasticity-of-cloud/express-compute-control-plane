@@ -53,17 +53,19 @@
       <groupId>io.quarkiverse.amazonservices</groupId>
       <artifactId>quarkus-amazon-dynamodb</artifactId>
     </dependency>
+    <!-- EC2 and Secrets Manager: raw SDK (no Quarkus extension available in BOM) -->
     <dependency>
-      <groupId>io.quarkiverse.amazonservices</groupId>
-      <artifactId>quarkus-amazon-ec2</artifactId>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>ec2</artifactId>
     </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>secretsmanager</artifactId>
+    </dependency>
+    <!-- IAM and STS via Quarkus extension (available in BOM) -->
     <dependency>
       <groupId>io.quarkiverse.amazonservices</groupId>
       <artifactId>quarkus-amazon-iam</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.quarkiverse.amazonservices</groupId>
-      <artifactId>quarkus-amazon-secretsmanager</artifactId>
     </dependency>
     <dependency>
       <groupId>io.quarkiverse.amazonservices</groupId>
