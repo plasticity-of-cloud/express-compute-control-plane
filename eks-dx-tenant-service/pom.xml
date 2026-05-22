@@ -124,8 +124,6 @@
         <quarkus.native.enabled>true</quarkus.native.enabled>
         <quarkus.native.container-build>true</quarkus.native.container-build>
         <quarkus.native.builder-image>quay.io/quarkus/ubi-quarkus-mandrel-builder-image:jdk-21</quarkus.native.builder-image>
-        <!-- Target arm64 to match Lambda Architectures: [arm64] in sam.yaml -->
-        <quarkus.native.container-runtime-options>--platform linux/arm64</quarkus.native.container-runtime-options>
       </properties>
     </profile>
   </profiles>

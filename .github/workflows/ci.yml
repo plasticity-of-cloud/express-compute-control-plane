@@ -25,7 +25,7 @@ jobs:
         run: |
           mvn -B -pl eks-dx-model,eks-dx-credential-service package -DskipTests
           mvn -B -pl eks-dx-model,eks-dx-mgmt-service package -DskipTests
-          mvn -B -pl eks-dx-model,eks-dx-tenant-service package -DskipTests -Pnative
+          mvn -B -pl eks-dx-model,eks-dx-tenant-service package -DskipTests
 
       - name: Validate SAM template
         uses: aws-actions/setup-sam@v2

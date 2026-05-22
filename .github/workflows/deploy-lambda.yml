@@ -34,7 +34,7 @@ jobs:
           mvn -B -pl eks-dx-model,eks-dx-credential-service package -DskipTests
           mvn -B -pl eks-dx-model,eks-dx-mgmt-service package -DskipTests
           # tenant service: GraalVM native image (provided.al2023, arm64)
-          mvn -B -pl eks-dx-model,eks-dx-tenant-service package -DskipTests -Pnative
+          mvn -B -pl eks-dx-model,eks-dx-tenant-service package -DskipTests
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
