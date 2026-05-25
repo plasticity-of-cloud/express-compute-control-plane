@@ -75,18 +75,30 @@ public class TenantProvisioningService {
     @ConfigProperty(name = "eks-dx.clusters-table")
     String clustersTable;
 
-    @ConfigProperty(name = "eks-dx.tenant.launch-template-id")
-    String launchTemplateId;
+    @ConfigProperty(name = "eks-dx.tenant.lt-arm64-ondemand")
+    String ltArm64Ondemand;
 
-    @ConfigProperty(name = "eks-dx.tenant.subnet-id")
-    String subnetId;
+    @ConfigProperty(name = "eks-dx.tenant.lt-arm64-spot")
+    String ltArm64Spot;
+
+    @ConfigProperty(name = "eks-dx.tenant.lt-x86-ondemand")
+    String ltX86Ondemand;
+
+    @ConfigProperty(name = "eks-dx.tenant.lt-x86-spot")
+    String ltX86Spot;
+
+    @ConfigProperty(name = "eks-dx.tenant.subnet-ids")
+    String subnetIds;
 
     // -------------------------------------------------------------------------
     // Provision
     // -------------------------------------------------------------------------
 
-    public String provision(String tenantId) {
-        LOG.infof("Provisioning tenant: %s", tenantId);
+    public String provision(String tenantId, String arch, String ec2PricingModel, String k8sVersion) {
+        LOG.infof("Provisioning tenant: %s (arch=%s, pricing=%s, k8s=%s)", tenantId, arch, ec2PricingModel, k8sVersion);
+
+        String launchTemplateId = resolveLaunchTemplate(arch, ec2PricingModel);
+        String subnetId = subnetIds.split(",")[0].trim();
 
         String region = System.getenv().getOrDefault("AWS_REGION", "us-east-1");
         String accountId = sts.getCallerIdentity(GetCallerIdentityRequest.builder().build()).account();
@@ -248,6 +260,16 @@ public class TenantProvisioningService {
         } catch (Exception e) {
             LOG.warnf("Could not delete secret %s: %s", secretId, e.getMessage());
         }
+    }
+
+    private String resolveLaunchTemplate(String arch, String pricingModel) {
+        return switch (arch + "/" + pricingModel) {
+            case "arm64/ondemand" -> ltArm64Ondemand;
+            case "arm64/spot" -> ltArm64Spot;
+            case "x86_64/ondemand" -> ltX86Ondemand;
+            case "x86_64/spot" -> ltX86Spot;
+            default -> throw new IllegalArgumentException("Invalid arch/pricing: " + arch + "/" + pricingModel);
+        };
     }
 
     private String generateRsaPrivateKeyPem() {

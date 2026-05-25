@@ -31,6 +31,9 @@ public class TenantResource {
 
     public static class CreateTenantRequest {
         @JsonProperty("tenantId") public String tenantId;
+        @JsonProperty("arch") public String arch;
+        @JsonProperty("ec2PricingModel") public String ec2PricingModel;
+        @JsonProperty("k8sVersion") public String k8sVersion;
     }
 
     @POST
@@ -38,7 +41,14 @@ public class TenantResource {
         try {
             if (request == null || request.tenantId == null || request.tenantId.isBlank())
                 return error(400, "InvalidParameterException", "tenantId is required");
-            String id = provisioningService.provision(request.tenantId);
+            String arch = request.arch != null ? request.arch : "arm64";
+            String pricingModel = request.ec2PricingModel != null ? request.ec2PricingModel : "spot";
+            String k8sVersion = request.k8sVersion != null ? request.k8sVersion : "1.35";
+            if (!arch.equals("arm64") && !arch.equals("x86_64"))
+                return error(400, "InvalidParameterException", "arch must be arm64 or x86_64");
+            if (!pricingModel.equals("spot") && !pricingModel.equals("ondemand"))
+                return error(400, "InvalidParameterException", "ec2PricingModel must be spot or ondemand");
+            String id = provisioningService.provision(request.tenantId, arch, pricingModel, k8sVersion);
             return Response.accepted(Map.of("tenantId", id)).build();
         } catch (IllegalArgumentException e) {
             return error(400, "InvalidParameterException", e.getMessage());
