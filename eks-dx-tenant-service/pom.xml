@@ -62,6 +62,10 @@
       <groupId>software.amazon.awssdk</groupId>
       <artifactId>secretsmanager</artifactId>
     </dependency>
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>sqs</artifactId>
+    </dependency>
     <!-- IAM and STS via Quarkus extension (available in BOM) -->
     <dependency>
       <groupId>io.quarkiverse.amazonservices</groupId>
