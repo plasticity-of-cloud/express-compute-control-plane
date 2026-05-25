@@ -73,6 +73,7 @@ public class TenantProvisioningService {
     @Inject DynamoDbClient dynamoDb;
     @Inject IamClient iam;
     @Inject StsClient sts;
+    @Inject TenantNetworkService networkService;
 
     // EC2, SecretsManager, SQS — create via default credential chain
     private final Ec2Client ec2 = Ec2Client.create();
@@ -101,6 +102,12 @@ public class TenantProvisioningService {
     @ConfigProperty(name = "eks-dx.tenant.subnet-ids")
     String subnetIds;
 
+    @ConfigProperty(name = "eks-dx.tenant.vpc-id")
+    String vpcId;
+
+    @ConfigProperty(name = "eks-dx.tenant.availability-zone", defaultValue = "")
+    String availabilityZone;
+
     // -------------------------------------------------------------------------
     // Provision
     // -------------------------------------------------------------------------
@@ -109,10 +116,15 @@ public class TenantProvisioningService {
         LOG.infof("Provisioning tenant: %s (arch=%s, pricing=%s, k8s=%s)", tenantId, arch, ec2PricingModel, k8sVersion);
 
         String launchTemplateId = resolveLaunchTemplate(arch, ec2PricingModel);
-        String subnetId = subnetIds.split(",")[0].trim();
-
         String region = System.getenv().getOrDefault("AWS_REGION", "us-east-1");
         String accountId = sts.getCallerIdentity(GetCallerIdentityRequest.builder().build()).account();
+        String clusterName = "eks-dx-" + tenantId;
+
+        // Create per-tenant network isolation (subnets + security group)
+        String az = availabilityZone.isEmpty() ? region + "a" : availabilityZone;
+        TenantNetworkService.NetworkResult network = networkService.createTenantNetwork(
+            tenantId, clusterName, vpcId, az);
+        String subnetId = network.publicSubnetId();
 
         // 1. Generate RSA-2048 SA signing key
         String signingKeyPem = generateRsaPrivateKeyPem();
@@ -134,7 +146,6 @@ public class TenantProvisioningService {
 
         // 3. IAM role with managed policies + inline policies (parity with Terraform)
         String roleName = "eks-dx-tenant-" + tenantId + "-instance-role";
-        String clusterName = "eks-dx-" + tenantId;
         iam.createRole(CreateRoleRequest.builder()
             .roleName(roleName)
             .assumeRolePolicyDocument(ec2TrustPolicy())
@@ -207,6 +218,7 @@ public class TenantProvisioningService {
             .launchTemplate(LaunchTemplateSpecification.builder()
                 .launchTemplateId(launchTemplateId).build())
             .subnetId(subnetId)
+            .securityGroupIds(network.securityGroupId())
             .keyName("eks-dx-tenant-" + tenantId)
             .iamInstanceProfile(IamInstanceProfileSpecification.builder()
                 .name(roleName).build())
