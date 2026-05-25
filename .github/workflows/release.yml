@@ -9,7 +9,7 @@ permissions:
   packages: write
 
 env:
-  JAVA_VERSION: '21'
+  JAVA_VERSION: '25'
 
 jobs:
   build:
