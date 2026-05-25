@@ -67,8 +67,8 @@ else
   mvn -B -pl eks-dx-cli package $SKIP_FLAG
 fi
 
-# 8. CDK synth
-echo "--- [8/8] cdk synth"
+# 8. CDK synth (validates stack compiles; run `cdk synth` separately for cdk.out/)
+echo "--- [8/8] cdk validate"
 mvn -B -pl infra compile exec:java
 
 echo ""
@@ -82,4 +82,4 @@ if $NATIVE; then
 else
   echo "    CLI jar:    eks-dx-cli/target/eks-dx-cli-*-runner.jar"
 fi
-echo "    CDK template: infra/cdk.out/"
+echo "    CDK:        cd infra && cdk synth  (to produce cdk.out/)"
