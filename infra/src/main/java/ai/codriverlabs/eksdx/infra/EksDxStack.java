@@ -112,15 +112,12 @@ public class EksDxStack extends Stack {
             .build();
 
         // -----------------------------------------------------------------------
-        // SSM Parameters (placeholders — overridden after Terraform creates infra)
+        // SSM Parameter lookups (written by Terraform in eks-dx-infra)
         // -----------------------------------------------------------------------
-        StringParameter.Builder.create(this, "LaunchTemplateIdParam")
-            .parameterName("/eks-dx/tenant/launch-template-id")
-            .stringValue("lt-placeholder").build();
-
-        StringParameter.Builder.create(this, "SubnetIdParam")
-            .parameterName("/eks-dx/tenant/subnet-id")
-            .stringValue("subnet-placeholder").build();
+        String launchTemplateId = StringParameter.valueForStringParameter(
+            this, "/eks-dx/tenant/launch-template-id");
+        String subnetId = StringParameter.valueForStringParameter(
+            this, "/eks-dx/tenant/subnet-id");
 
         // -----------------------------------------------------------------------
         // CloudWatch Log Group for API Gateway access logs
@@ -220,8 +217,8 @@ public class EksDxStack extends Stack {
             .environment(Map.of(
                 "EKS_DX_TENANTS_TABLE", tenantsTable.getTableName(),
                 "EKS_DX_CLUSTERS_TABLE", clustersTable.getTableName(),
-                "EKS_DX_LAUNCH_TEMPLATE_ID", "lt-placeholder",
-                "EKS_DX_SUBNET_ID", "subnet-placeholder"))
+                "EKS_DX_LAUNCH_TEMPLATE_ID", launchTemplateId,
+                "EKS_DX_SUBNET_ID", subnetId))
             .build();
 
         // Function URL for SSE /stream endpoint (not via API Gateway)
