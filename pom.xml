@@ -25,8 +25,9 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
-    <quarkus.platform.version>3.33.1</quarkus.platform.version>
-    <surefire-plugin.version>3.2.5</surefire-plugin.version>
+    <quarkus.platform.version>3.35.4</quarkus.platform.version>
+    <surefire-plugin.version>3.5.5</surefire-plugin.version>
+
     <compiler-plugin.version>3.15.0</compiler-plugin.version>
 
     <quarkus.native.builder-image>quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-25</quarkus.native.builder-image>
