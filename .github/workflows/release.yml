@@ -42,7 +42,7 @@ jobs:
           mvn -B -pl eks-dx-model,eks-dx-tenant-service package -DskipTests -Pnative
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -107,7 +107,7 @@ jobs:
           cp eks-dx-mgmt-service/target/function.zip eks-dx-mgmt-service-${VERSION}.zip
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
