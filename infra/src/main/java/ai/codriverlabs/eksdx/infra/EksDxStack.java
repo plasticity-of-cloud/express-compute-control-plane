@@ -218,6 +218,15 @@ public class EksDxStack extends Stack {
         boolean x86Native = "x86".equals(this.getNode().tryGetContext("nativeArch"));
         Runtime tenantRuntime = jvmMode ? Runtime.JAVA_25 : Runtime.PROVIDED_AL2023;
         Architecture tenantArch = (jvmMode || x86Native) ? Architecture.X86_64 : Architecture.ARM_64;
+        // Write the API endpoint to SSM so EC2 instances can read it at boot
+        // without baking it into user data (decouples endpoint from instance launch).
+        String endpointParamName = "/eks-d-xpress/control-plane/api/endpoint";
+        StringParameter.Builder.create(this, "ApiEndpointParam")
+            .parameterName(endpointParamName)
+            .stringValue(api.getUrl())
+            .description("EKS-DX API Gateway endpoint — read by EC2 instances at boot")
+            .build();
+
         Function tenantFn = Function.Builder.create(this, "EksDxTenantFunction")
             .functionName("eks-d-xpress-tenant-service")
             .runtime(tenantRuntime)
@@ -233,8 +242,7 @@ public class EksDxStack extends Stack {
                 "EKS_DX_LT_ARM64_SPOT", ltArm64Spot,
                 "EKS_DX_LT_X86_ONDEMAND", ltX86Ondemand,
                 "EKS_DX_LT_X86_SPOT", ltX86Spot,
-                "EKS_DX_VPC_ID", vpcId,
-                "EKS_DX_ENDPOINT", api.getUrl()))
+                "EKS_DX_VPC_ID", vpcId))
             .build();
 
         // Function URL for SSE /stream endpoint (not via API Gateway)
@@ -242,6 +250,12 @@ public class EksDxStack extends Stack {
             .authType(FunctionUrlAuthType.AWS_IAM)
             .invokeMode(InvokeMode.RESPONSE_STREAM)
             .build());
+
+        StringParameter.Builder.create(this, "TenantStreamUrlParam")
+            .parameterName("/eks-d-xpress/control-plane/api/stream-url")
+            .stringValue(tenantFunctionUrl.getUrl())
+            .description("EKS-DX tenant SSE stream Function URL — read by CLI")
+            .build();
 
         tenantsTable.grantReadWriteData(tenantFn);
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
@@ -271,6 +285,11 @@ public class EksDxStack extends Stack {
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
             .actions(List.of("sts:GetCallerIdentity"))
             .resources(List.of("*"))
+            .build());
+        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+            .actions(List.of("ssm:GetParameter"))
+            .resources(List.of(String.format("arn:aws:ssm:%s:%s:parameter%s",
+                Stack.of(this).getRegion(), Stack.of(this).getAccount(), endpointParamName)))
             .build());
 
         // -----------------------------------------------------------------------
