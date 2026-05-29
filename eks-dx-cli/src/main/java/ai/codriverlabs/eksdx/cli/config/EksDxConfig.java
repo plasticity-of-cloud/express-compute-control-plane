@@ -1,11 +1,14 @@
 package ai.codriverlabs.eksdx.cli.config;
 
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.ssm.SsmClient;
-import software.amazon.awssdk.services.ssm.model.GetParameterRequest;
+import ai.codriverlabs.eksdx.cli.util.AwsSigV4Signer;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
@@ -85,15 +88,27 @@ public class EksDxConfig {
     }
 
     private String resolveParamFromSsm(String paramName) {
-        try (SsmClient ssm = SsmClient.builder()
-                .region(Region.of(getRegion()))
-                .credentialsProvider(DefaultCredentialsProvider.create())
-                .build()) {
-            return ssm.getParameter(GetParameterRequest.builder()
-                    .name(paramName)
-                    .withDecryption(false)
-                    .build())
-                .parameter().value();
+        try {
+            String region = getRegion();
+            AwsSigV4Signer signer = AwsSigV4Signer.create(region);
+            if (signer == null) return null;
+
+            String body = "{\"Name\":\"" + paramName + "\",\"WithDecryption\":false}";
+            URI uri = URI.create("https://ssm." + region + ".amazonaws.com/");
+
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(uri)
+                    .header("Content-Type", "application/x-amz-json-1.1")
+                    .header("X-Amz-Target", "AmazonSSM.GetParameter");
+            signer.sign(builder, "POST", uri, body, "ssm", "application/x-amz-json-1.1");
+            HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofString(body)).build();
+
+            HttpResponse<String> response = HttpClient.newHttpClient()
+                    .send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) return null;
+
+            JsonNode root = new ObjectMapper().readTree(response.body());
+            return root.path("Parameter").path("Value").asText(null);
         } catch (Exception e) {
             return null;
         }
