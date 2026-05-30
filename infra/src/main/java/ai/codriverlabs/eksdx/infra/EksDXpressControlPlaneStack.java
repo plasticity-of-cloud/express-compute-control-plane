@@ -57,9 +57,9 @@ import java.util.Map;
  *   mgmtFn        — cluster/association CRUD, JVM
  *   tenantFn      — async provisioning + SSE stream, GraalVM native arm64, Function URL
  */
-public class EksDxStack extends Stack {
+public class EksDXpressControlPlaneStack extends Stack {
 
-    public EksDxStack(Construct scope, String id, StackProps props) {
+    public EksDXpressControlPlaneStack(Construct scope, String id, StackProps props) {
         super(scope, id, props);
 
         // -----------------------------------------------------------------------

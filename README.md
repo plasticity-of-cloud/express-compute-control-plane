@@ -37,7 +37,7 @@ Clusters and pod identity associations are registered via the `eks-dx` CLI. Tena
 ### Deploy
 
 ```bash
-cd infra && cdk deploy EksDxStack
+cd infra && cdk deploy EksDXpressControlPlaneStack
 ```
 
 Requires SSM parameters written by the infrastructure stack first (see `docs/SSM_PARAMETER_CONTRACT.md`).

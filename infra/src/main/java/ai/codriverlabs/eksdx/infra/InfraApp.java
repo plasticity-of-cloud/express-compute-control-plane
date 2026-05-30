@@ -19,7 +19,7 @@ public class InfraApp {
                 .account(account).region(region).build());
         }
 
-        new EksDxStack(app, "EksDxStack", propsBuilder.build());
+        new EksDXpressControlPlaneStack(app, "EksDXpressControlPlaneStack", propsBuilder.build());
         app.synth();
     }
 }

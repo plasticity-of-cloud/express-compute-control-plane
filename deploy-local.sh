@@ -62,7 +62,7 @@ fi
 
 echo "==> Deploying CDK stack"
 cd infra
-cdk deploy EksDxStack \
+cdk deploy EksDXpressControlPlaneStack \
   --require-approval never \
   $AWS_PROFILE_ARG \
   $CDK_CONTEXT_ARGS

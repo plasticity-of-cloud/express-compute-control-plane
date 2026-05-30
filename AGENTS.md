@@ -38,7 +38,7 @@ docs/                        # Architecture docs, SSM contract, migration plans
 | Pod mutation logic | `eks-dx-pod-identity-webhook/.../PodIdentityMutator.java` |
 | CLI entry point | `eks-dx-cli/.../EksDxCommand.java` |
 | CLI SigV4 signing | `eks-dx-cli/.../util/AwsSigV4Signer.java` |
-| CDK stack | `infra/.../EksDxStack.java` |
+| CDK stack | `infra/.../EksDXpressControlPlaneStack.java` |
 
 ## Authentication Model
 
@@ -83,7 +83,7 @@ Requires: Java 25, Maven 3.9+, Docker (for native builds via Mandrel container).
 ## Deploy
 
 ```bash
-cd infra && cdk deploy EksDxStack
+cd infra && cdk deploy EksDXpressControlPlaneStack
 ```
 
 Requires: SSM parameters written by infrastructure stack first.
