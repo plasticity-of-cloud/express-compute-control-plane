@@ -76,8 +76,8 @@ public class AwsSigV4Signer {
                 .build());
 
         signed.headers().forEach((name, values) -> {
-            if (!name.equalsIgnoreCase("Host") && !name.equalsIgnoreCase("Content-Type")) {
-                values.forEach(value -> builder.header(name, value));
+            if (!name.equalsIgnoreCase("Host")) {
+                values.forEach(value -> builder.setHeader(name, value));
             }
         });
     }

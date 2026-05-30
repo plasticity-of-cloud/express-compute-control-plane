@@ -43,7 +43,7 @@ public class EksDxConfig {
         String fromFile = props.getProperty("endpoint");
         if (fromFile != null && !fromFile.isBlank()) return fromFile;
         String fromSsm = resolveEndpointFromSsm();
-        if (fromSsm != null) return fromSsm;
+        if (fromSsm != null) { cacheProperty("endpoint", fromSsm); return fromSsm; }
         return "https://eks-d-xpress.codriverlabs.ai";
     }
 
@@ -58,7 +58,9 @@ public class EksDxConfig {
         if (env != null && !env.isBlank()) return env;
         String fromFile = props.getProperty("stream-url");
         if (fromFile != null && !fromFile.isBlank()) return fromFile;
-        return resolveParamFromSsm(SSM_PARAM_STREAM_URL);
+        String fromSsm = resolveParamFromSsm(SSM_PARAM_STREAM_URL);
+        if (fromSsm != null) { cacheProperty("stream-url", fromSsm); return fromSsm; }
+        return null;
     }
 
     public void save(String endpoint, String region) throws IOException {
@@ -73,6 +75,16 @@ public class EksDxConfig {
 
     public static Path configFile() {
         return CONFIG_FILE;
+    }
+
+    private void cacheProperty(String key, String value) {
+        props.setProperty(key, value);
+        try {
+            Files.createDirectories(CONFIG_DIR);
+            try (var out = Files.newOutputStream(CONFIG_FILE)) {
+                props.store(out, "eks-dx CLI configuration");
+            }
+        } catch (IOException ignored) {}
     }
 
     private void load() {
@@ -90,7 +102,6 @@ public class EksDxConfig {
     }
 
     private String resolveParamFromSsm(String paramName) {
-        System.err.println("[SSM debug] resolveParamFromSsm called for: " + paramName);
         try {
             String region = getRegion();
             AwsSigV4Signer signer = AwsSigV4Signer.create(region);
@@ -106,16 +117,11 @@ public class EksDxConfig {
 
             HttpResponse<String> response = HttpClient.newHttpClient()
                     .send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                System.err.println("[SSM debug] HTTP " + response.statusCode() + ": " + response.body());
-                return null;
-            }
+            if (response.statusCode() != 200) return null;
 
             JsonNode root = new ObjectMapper().readTree(response.body());
             return root.path("Parameter").path("Value").asText(null);
         } catch (Exception e) {
-            System.err.println("[SSM debug] " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            if (e.getCause() != null) System.err.println("[SSM debug] cause: " + e.getCause().getMessage());
             return null;
         }
     }

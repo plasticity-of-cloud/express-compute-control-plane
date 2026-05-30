@@ -50,9 +50,7 @@ public class EksDxApiClient {
     private String send(String method, String path, String body) {
         try {
             URI uri = URI.create(endpoint + path);
-            var builder = HttpRequest.newBuilder()
-                .uri(uri)
-                .header("Content-Type", "application/json");
+            var builder = HttpRequest.newBuilder().uri(uri);
 
             if (body != null) {
                 builder.method(method, HttpRequest.BodyPublishers.ofString(body));
@@ -63,6 +61,8 @@ public class EksDxApiClient {
             // Sign management API requests (not /assets which uses token auth)
             if (signer != null && !path.contains("/assets")) {
                 signer.sign(builder, method, uri, body, "execute-api");
+            } else {
+                builder.header("Content-Type", "application/json");
             }
 
             var response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
