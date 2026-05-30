@@ -40,17 +40,24 @@ public class AwsSigV4Signer {
 
     public void sign(HttpRequest.Builder builder, String method, URI uri,
                      String body, String service) {
-        sign(builder, method, uri, body, service, "application/json");
+        sign(builder, method, uri, body, service, "application/json", java.util.Map.of());
     }
 
     public void sign(HttpRequest.Builder builder, String method, URI uri,
                      String body, String service, String contentType) {
+        sign(builder, method, uri, body, service, contentType, java.util.Map.of());
+    }
+
+    public void sign(HttpRequest.Builder builder, String method, URI uri,
+                     String body, String service, String contentType,
+                     java.util.Map<String, String> extraHeaders) {
         byte[] payload = body != null ? body.getBytes(StandardCharsets.UTF_8) : new byte[0];
 
         var sdkRequestBuilder = SdkHttpFullRequest.builder()
             .method(SdkHttpMethod.fromValue(method))
             .uri(uri)
             .putHeader("Content-Type", contentType);
+        extraHeaders.forEach(sdkRequestBuilder::putHeader);
         if (uri.getRawQuery() != null) {
             for (String pair : uri.getRawQuery().split("&")) {
                 String[] kv = pair.split("=", 2);

@@ -88,6 +88,7 @@ public class EksDxConfig {
     }
 
     private String resolveParamFromSsm(String paramName) {
+        System.err.println("[SSM debug] resolveParamFromSsm called for: " + paramName);
         try {
             String region = getRegion();
             AwsSigV4Signer signer = AwsSigV4Signer.create(region);
@@ -96,20 +97,23 @@ public class EksDxConfig {
             String body = "{\"Name\":\"" + paramName + "\",\"WithDecryption\":false}";
             URI uri = URI.create("https://ssm." + region + ".amazonaws.com/");
 
-            HttpRequest.Builder builder = HttpRequest.newBuilder()
-                    .uri(uri)
-                    .header("Content-Type", "application/x-amz-json-1.1")
-                    .header("X-Amz-Target", "AmazonSSM.GetParameter");
-            signer.sign(builder, "POST", uri, body, "ssm", "application/x-amz-json-1.1");
+            HttpRequest.Builder builder = HttpRequest.newBuilder().uri(uri);
+            signer.sign(builder, "POST", uri, body, "ssm", "application/x-amz-json-1.1",
+                    java.util.Map.of("X-Amz-Target", "AmazonSSM.GetParameter"));
             HttpRequest request = builder.POST(HttpRequest.BodyPublishers.ofString(body)).build();
 
             HttpResponse<String> response = HttpClient.newHttpClient()
                     .send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) return null;
+            if (response.statusCode() != 200) {
+                System.err.println("[SSM debug] HTTP " + response.statusCode() + ": " + response.body());
+                return null;
+            }
 
             JsonNode root = new ObjectMapper().readTree(response.body());
             return root.path("Parameter").path("Value").asText(null);
         } catch (Exception e) {
+            System.err.println("[SSM debug] " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            if (e.getCause() != null) System.err.println("[SSM debug] cause: " + e.getCause().getMessage());
             return null;
         }
     }
