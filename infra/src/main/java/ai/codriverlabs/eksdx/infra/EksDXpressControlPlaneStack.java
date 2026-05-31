@@ -295,6 +295,7 @@ public class EksDXpressControlPlaneStack extends Stack {
                 "iam:CreateRole", "iam:DeleteRole",
                 "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:PassRole", "iam:TagRole",
                 "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+                "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
                 "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile",
                 "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile"))
             .resources(List.of("arn:aws:iam::*:role/eks-d-xpress-tenant-*",

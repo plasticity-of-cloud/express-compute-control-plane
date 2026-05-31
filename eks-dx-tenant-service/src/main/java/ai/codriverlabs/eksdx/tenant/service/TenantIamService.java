@@ -38,12 +38,16 @@ public class TenantIamService {
     public IamResult createTenantRole(String tenantId, String clusterName, String region, String accountId) {
         String roleName = "eks-d-xpress-tenant-" + tenantId + "-instance-role";
 
-        iam.createRole(CreateRoleRequest.builder()
-            .roleName(roleName)
-            .assumeRolePolicyDocument(EC2_TRUST_POLICY)
-            .tags(software.amazon.awssdk.services.iam.model.Tag.builder()
-                .key("eks-cluster-name").value(clusterName).build())
-            .build());
+        try {
+            iam.createRole(CreateRoleRequest.builder()
+                .roleName(roleName)
+                .assumeRolePolicyDocument(EC2_TRUST_POLICY)
+                .tags(software.amazon.awssdk.services.iam.model.Tag.builder()
+                    .key("eks-cluster-name").value(clusterName).build())
+                .build());
+        } catch (software.amazon.awssdk.services.iam.model.EntityAlreadyExistsException e) {
+            LOG.infof("IAM role %s already exists, reusing", roleName);
+        }
 
         for (String policyArn : MANAGED_POLICIES) {
             iam.attachRolePolicy(AttachRolePolicyRequest.builder()
@@ -56,10 +60,14 @@ public class TenantIamService {
             .policyDocument(tenantInlinePolicy(tenantId, clusterName, region, accountId))
             .build());
 
-        iam.createInstanceProfile(CreateInstanceProfileRequest.builder()
-            .instanceProfileName(roleName).build());
-        iam.addRoleToInstanceProfile(AddRoleToInstanceProfileRequest.builder()
-            .instanceProfileName(roleName).roleName(roleName).build());
+        try {
+            iam.createInstanceProfile(CreateInstanceProfileRequest.builder()
+                .instanceProfileName(roleName).build());
+            iam.addRoleToInstanceProfile(AddRoleToInstanceProfileRequest.builder()
+                .instanceProfileName(roleName).roleName(roleName).build());
+        } catch (software.amazon.awssdk.services.iam.model.EntityAlreadyExistsException e) {
+            LOG.infof("Instance profile %s already exists, reusing", roleName);
+        }
 
         LOG.infof("Created IAM role + instance profile %s for tenant %s", roleName, tenantId);
         return new IamResult(roleName, roleName);
@@ -230,7 +238,15 @@ public class TenantIamService {
                     iam.deleteRolePolicy(software.amazon.awssdk.services.iam.model.DeleteRolePolicyRequest.builder()
                         .roleName(roleName).policyName(policy).build()));
         } catch (Exception ignored) {}
-        iam.deleteRole(software.amazon.awssdk.services.iam.model.DeleteRoleRequest.builder()
-            .roleName(roleName).build());
+        try {
+            iam.listAttachedRolePolicies(software.amazon.awssdk.services.iam.model.ListAttachedRolePoliciesRequest.builder()
+                .roleName(roleName).build()).attachedPolicies().forEach(policy ->
+                    iam.detachRolePolicy(software.amazon.awssdk.services.iam.model.DetachRolePolicyRequest.builder()
+                        .roleName(roleName).policyArn(policy.policyArn()).build()));
+        } catch (Exception ignored) {}
+        try {
+            iam.deleteRole(software.amazon.awssdk.services.iam.model.DeleteRoleRequest.builder()
+                .roleName(roleName).build());
+        } catch (Exception ignored) {}
     }
 }

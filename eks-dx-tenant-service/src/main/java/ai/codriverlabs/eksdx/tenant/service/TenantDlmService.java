@@ -35,19 +35,23 @@ public class TenantDlmService {
     public String createEtcdBackupPolicy(String tenantId, String clusterName) {
         // DLM execution role
         String roleName = "eks-d-xpress-tenant-" + tenantId + "-dlm";
-        iam.createRole(CreateRoleRequest.builder()
-            .roleName(roleName)
-            .assumeRolePolicyDocument("""
-                {
-                  "Version": "2012-10-17",
-                  "Statement": [{
-                    "Effect": "Allow",
-                    "Principal": { "Service": "dlm.amazonaws.com" },
-                    "Action": "sts:AssumeRole"
-                  }]
-                }
-                """)
-            .build());
+        try {
+            iam.createRole(CreateRoleRequest.builder()
+                .roleName(roleName)
+                .assumeRolePolicyDocument("""
+                    {
+                      "Version": "2012-10-17",
+                      "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": { "Service": "dlm.amazonaws.com" },
+                        "Action": "sts:AssumeRole"
+                      }]
+                    }
+                    """)
+                .build());
+        } catch (software.amazon.awssdk.services.iam.model.EntityAlreadyExistsException e) {
+            LOG.infof("DLM role %s already exists, reusing", roleName);
+        }
         iam.attachRolePolicy(AttachRolePolicyRequest.builder()
             .roleName(roleName)
             .policyArn("arn:aws:iam::aws:policy/service-role/AWSDataLifecycleManagerServiceRole")
