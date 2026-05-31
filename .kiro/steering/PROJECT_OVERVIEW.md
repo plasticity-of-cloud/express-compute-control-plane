@@ -48,19 +48,31 @@ Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
 ## Building and Running
 
 ```bash
-# Lambda (dev mode)
-mvn -pl eks-dx-lambda compile quarkus:dev
+# Lambda services (JVM)
+./build-local.sh --only credential,mgmt,tenant --skip-tests
 
-# Proxy (dev mode)
-mvn -pl eks-dx-auth-proxy compile quarkus:dev
+# Tenant service native (production)
+./build-local.sh --only tenant --native
 
-# CLI (native binary)
-mvn -pl eks-dx-cli package -Pnative
+# CLI
+./build-local.sh --only cli --skip-tests
+
+# Deploy (JVM mode, fast iteration)
+./deploy-local.sh --skip-build --context jvmTenant=true
 
 # Integration tests (requires DynamoDB Local on port 18000)
 docker run -d -p 18000:8000 public.ecr.aws/aws-dynamodb-local/aws-dynamodb-local:latest
 mvn test -Dintegration.dynamodb=true
 ```
+
+## Tenant Lifecycle
+
+```bash
+./create_tenant.sh <tenant-id>   # Provision EKS-D cluster (streams progress via SSE)
+./delete_tenant.sh <tenant-id>   # Deprovision and wait for completion
+```
+
+SSH key is stored in Secrets Manager at `eks-d-xpress/tenant/<id>/ssh-key` and saved locally to `~/.eks-d-xpress/tenants/<region>/<id>.pem` on successful provisioning.
 
 ## Configuration
 
