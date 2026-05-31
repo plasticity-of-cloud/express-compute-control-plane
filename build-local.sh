@@ -2,14 +2,16 @@
 # build-local.sh — full local build of eks-dx-control-plane
 #
 # Usage:
-#   ./build-local.sh              # JVM mode (fast, x86-safe)
-#   ./build-local.sh --native     # GraalVM native for tenant + CLI (requires GraalVM JDK)
+#   ./build-local.sh              # Build all modules (JVM mode)
+#   ./build-local.sh --native     # GraalVM native for tenant + CLI
 #   ./build-local.sh --skip-tests # skip unit tests
+#   ./build-local.sh --only tenant-service,cli   # build only specific modules
 #
 set -euo pipefail
 
 NATIVE=false
 SKIP_TESTS=false
+ONLY=""
 
 for arg in "$@"; do
   case $arg in
@@ -18,84 +20,106 @@ for arg in "$@"; do
       echo ""
       echo "Options:"
       echo "  --native       Build GraalVM native binaries for tenant-service and CLI"
-      echo "                 (requires GraalVM JDK or Docker for Mandrel container)"
       echo "  --skip-tests   Skip unit tests during build"
+      echo "  --only <list>  Comma-separated modules to build (skips others)"
+      echo "                 Available: credential,mgmt,tenant,auth-proxy,webhook,cli,cdk"
       echo "  --help         Show this help message"
       echo ""
       echo "Examples:"
-      echo "  ./build-local.sh                    # JVM mode (fast)"
-      echo "  ./build-local.sh --native           # GraalVM native"
-      echo "  ./build-local.sh --skip-tests       # skip unit tests"
-      echo "  ./build-local.sh --native --skip-tests"
+      echo "  ./build-local.sh                           # all modules, JVM"
+      echo "  ./build-local.sh --native                  # all modules, native"
+      echo "  ./build-local.sh --only tenant             # tenant-service only"
+      echo "  ./build-local.sh --only tenant,cli --native"
+      echo "  ./build-local.sh --only cdk                # CDK synth only"
       exit 0
       ;;
     --native)     NATIVE=true ;;
     --skip-tests) SKIP_TESTS=true ;;
+    --only)       ;; # value captured below
+    *)
+      # capture value after --only
+      if [[ "${PREV_ARG:-}" == "--only" ]]; then
+        ONLY="$arg"
+      fi
+      ;;
   esac
+  PREV_ARG="$arg"
 done
+
+# Handle --only=value syntax
+for arg in "$@"; do
+  if [[ "$arg" == --only=* ]]; then
+    ONLY="${arg#--only=}"
+  fi
+done
+
+should_build() {
+  [[ -z "$ONLY" ]] || [[ ",$ONLY," == *",$1,"* ]]
+}
 
 SKIP_FLAG=""
 $SKIP_TESTS && SKIP_FLAG="-DskipTests"
 
-echo "==> Building eks-dx-control-plane (native=${NATIVE}, skipTests=${SKIP_TESTS})"
+echo "==> Building eks-dx-control-plane (native=${NATIVE}, skipTests=${SKIP_TESTS}, only=${ONLY:-all})"
 
-# 0. Parent POM (so child modules can resolve their parent)
-echo "--- [0] parent pom"
+# 0. Parent POM + model (always — required for dependency resolution)
+echo "--- [0] parent pom + model"
 mvn -B -N install $SKIP_FLAG
-
-# 1. Model (shared, always JVM — install so downstream modules resolve it)
-echo "--- [1/7] model"
 mvn -B -pl eks-dx-model install $SKIP_FLAG
 
-# 2. Credential service (JVM, SnapStart)
-echo "--- [2/7] credential-service"
-mvn -B -pl eks-dx-credential-service package $SKIP_FLAG
-
-# 3. Mgmt service (JVM)
-echo "--- [3/7] mgmt-service"
-mvn -B -pl eks-dx-mgmt-service package $SKIP_FLAG
-
-# 4. Tenant service (native arm64 in prod; JVM or x86 native locally)
-echo "--- [4/7] tenant-service"
-if $NATIVE; then
-  mvn -B -pl eks-dx-tenant-service package $SKIP_FLAG -Pnative
-else
-  mvn -B -pl eks-dx-tenant-service package $SKIP_FLAG
+# 1. Credential service
+if should_build "credential"; then
+  echo "--- credential-service"
+  mvn -B -pl eks-dx-credential-service package $SKIP_FLAG
 fi
 
-# 5. Auth proxy (container image, no push)
-echo "--- [5/7] auth-proxy"
-mvn -B -pl eks-dx-auth-proxy package $SKIP_FLAG \
-  -Dquarkus.container-image.build=true \
-  -Dquarkus.container-image.push=false
-
-# 6. Pod identity webhook (container image, no push)
-echo "--- [6/7] pod-identity-webhook"
-mvn -B -pl eks-dx-pod-identity-webhook package $SKIP_FLAG \
-  -Dquarkus.container-image.build=true \
-  -Dquarkus.container-image.push=false
-
-# 7. CLI
-echo "--- [7/7] cli"
-if $NATIVE; then
-  mvn -B -pl eks-dx-cli package $SKIP_FLAG -Pnative
-else
-  mvn -B -pl eks-dx-cli package $SKIP_FLAG
+# 2. Mgmt service
+if should_build "mgmt"; then
+  echo "--- mgmt-service"
+  mvn -B -pl eks-dx-mgmt-service package $SKIP_FLAG
 fi
 
-# 8. CDK synth (validates stack compiles; run `cdk synth` separately for cdk.out/)
-echo "--- [8/8] cdk validate"
-mvn -B -pl infra compile exec:java
+# 3. Tenant service
+if should_build "tenant"; then
+  echo "--- tenant-service"
+  if $NATIVE; then
+    mvn -B -pl eks-dx-tenant-service package $SKIP_FLAG -Pnative
+  else
+    mvn -B -pl eks-dx-tenant-service package $SKIP_FLAG
+  fi
+fi
+
+# 4. Auth proxy
+if should_build "auth-proxy"; then
+  echo "--- auth-proxy"
+  mvn -B -pl eks-dx-auth-proxy package $SKIP_FLAG \
+    -Dquarkus.container-image.build=true \
+    -Dquarkus.container-image.push=false
+fi
+
+# 5. Pod identity webhook
+if should_build "webhook"; then
+  echo "--- pod-identity-webhook"
+  mvn -B -pl eks-dx-pod-identity-webhook package $SKIP_FLAG \
+    -Dquarkus.container-image.build=true \
+    -Dquarkus.container-image.push=false
+fi
+
+# 6. CLI
+if should_build "cli"; then
+  echo "--- cli"
+  if $NATIVE; then
+    mvn -B -pl eks-dx-cli package $SKIP_FLAG -Pnative
+  else
+    mvn -B -pl eks-dx-cli package $SKIP_FLAG
+  fi
+fi
+
+# 7. CDK
+if should_build "cdk"; then
+  echo "--- cdk validate"
+  mvn -B -pl infra compile exec:java
+fi
 
 echo ""
 echo "==> Build complete"
-echo "    Lambda zips:"
-echo "      eks-dx-credential-service/target/function.zip"
-echo "      eks-dx-mgmt-service/target/function.zip"
-echo "      eks-dx-tenant-service/target/function.zip"
-if $NATIVE; then
-  echo "    CLI binary: eks-dx-cli/target/eks-dx-*-runner"
-else
-  echo "    CLI jar:    eks-dx-cli/target/eks-dx-cli-*-runner.jar"
-fi
-echo "    CDK:        cd infra && cdk synth  (to produce cdk.out/)"
