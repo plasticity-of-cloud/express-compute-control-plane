@@ -295,9 +295,32 @@ public class EksDXpressControlPlaneStack extends Stack {
                 "iam:CreateRole", "iam:DeleteRole",
                 "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:PassRole", "iam:TagRole",
                 "iam:AttachRolePolicy", "iam:DetachRolePolicy",
-                "iam:CreateInstanceProfile", "iam:AddRoleToInstanceProfile"))
+                "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile",
+                "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile"))
             .resources(List.of("arn:aws:iam::*:role/eks-d-xpress-tenant-*",
                 "arn:aws:iam::*:instance-profile/eks-d-xpress-tenant-*"))
+            .build());
+        // DLM: etcd backup lifecycle policies
+        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+            .actions(List.of(
+                "dlm:CreateLifecyclePolicy",
+                "dlm:DeleteLifecyclePolicy",
+                "dlm:GetLifecyclePolicies"))
+            .resources(List.of("*"))
+            .build());
+        // SQS: Karpenter interruption queue
+        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+            .actions(List.of("sqs:CreateQueue", "sqs:DeleteQueue", "sqs:GetQueueUrl"))
+            .resources(List.of(String.format("arn:aws:sqs:%s:%s:eks-d-xpress-*",
+                Stack.of(this).getRegion(), Stack.of(this).getAccount())))
+            .build());
+        // EventBridge: spot interruption rules
+        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+            .actions(List.of(
+                "events:PutRule", "events:PutTargets",
+                "events:RemoveTargets", "events:DeleteRule"))
+            .resources(List.of(String.format("arn:aws:events:%s:%s:rule/eks-d-xpress-*",
+                Stack.of(this).getRegion(), Stack.of(this).getAccount())))
             .build());
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
             .actions(List.of(
