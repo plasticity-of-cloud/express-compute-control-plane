@@ -233,7 +233,7 @@ public class EksDXpressControlPlaneStack extends Stack {
             .architecture(tenantArch)
             .handler("io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest")
             .code(Code.fromAsset(root + "eks-dx-tenant-service/target/function.zip"))
-            .memorySize(128)
+            .memorySize(jvmMode ? 512 : 128)
             .timeout(Duration.seconds(900))
             .environment(Map.of(
                 "EKS_DX_TENANTS_TABLE", tenantsTable.getTableName(),
