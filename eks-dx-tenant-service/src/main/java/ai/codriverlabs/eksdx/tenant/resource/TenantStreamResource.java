@@ -28,11 +28,18 @@ public class TenantStreamResource {
     @Produces(MediaType.SERVER_SENT_EVENTS)
     @RestStreamElementType(MediaType.APPLICATION_JSON)
     public Multi<TenantProgress> streamProgress(@PathParam("id") String id) {
-        // Emit every 5s; include terminal event then stop (select().first stops before matching item,
-        // so we negate: keep while NOT terminal, which emits the last non-terminal + closes).
-        // The client receives the final state on the last poll before the stream closes.
+        // Poll every 5s, max 96 ticks (8 minutes).
+        // select().first(predicate) stops BEFORE the non-matching item, so we use an AtomicBoolean
+        // to include the terminal "ready"/"failed" event before closing the stream.
+        java.util.concurrent.atomic.AtomicBoolean emittedTerminal = new java.util.concurrent.atomic.AtomicBoolean(false);
         return Multi.createFrom().ticks().every(Duration.ofSeconds(5))
+            .select().first(96)
             .map(tick -> provisioningService.getProgress(id))
-            .select().first(p -> !"ready".equals(p.state()) && !"failed".equals(p.state()));
+            .select().first(p -> {
+                if (emittedTerminal.get()) return false;
+                boolean terminal = "ready".equals(p.state()) || "failed".equals(p.state());
+                if (terminal) emittedTerminal.set(true);
+                return true;
+            });
     }
 }
