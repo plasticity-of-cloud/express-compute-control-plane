@@ -25,6 +25,7 @@ public class EksDxConfig {
     private static final Path CONFIG_FILE = CONFIG_DIR.resolve("config");
     static final String SSM_PARAM_ENDPOINT = "/eks-d-xpress/control-plane/api/endpoint";
     static final String SSM_PARAM_STREAM_URL = "/eks-d-xpress/control-plane/api/stream-url";
+    static final String SSM_PARAM_PROVISIONING_URL = "/eks-d-xpress/control-plane/api/provisioning-url";
 
     private final Properties props = new Properties();
 
@@ -60,6 +61,16 @@ public class EksDxConfig {
         if (fromFile != null && !fromFile.isBlank()) return fromFile;
         String fromSsm = resolveParamFromSsm(SSM_PARAM_STREAM_URL);
         if (fromSsm != null) { cacheProperty("stream-url", fromSsm); return fromSsm; }
+        return null;
+    }
+
+    public String getProvisioningUrl() {
+        String env = System.getenv("EKS_DX_PROVISIONING_URL");
+        if (env != null && !env.isBlank()) return env;
+        String fromFile = props.getProperty("provisioning-url");
+        if (fromFile != null && !fromFile.isBlank()) return fromFile;
+        String fromSsm = resolveParamFromSsm(SSM_PARAM_PROVISIONING_URL);
+        if (fromSsm != null) { cacheProperty("provisioning-url", fromSsm); return fromSsm; }
         return null;
     }
 

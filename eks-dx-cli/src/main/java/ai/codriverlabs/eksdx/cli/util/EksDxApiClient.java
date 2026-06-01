@@ -36,6 +36,31 @@ public class EksDxApiClient {
     }
 
     /**
+     * POST to a Lambda Function URL (signs with service=lambda, no 29s API Gateway limit).
+     */
+    public void postFunctionUrl(String url, String body, String region) {
+        try {
+            URI uri = URI.create(url);
+            var builder = HttpRequest.newBuilder().uri(uri)
+                .method("POST", HttpRequest.BodyPublishers.ofString(body));
+            AwsSigV4Signer fnSigner = AwsSigV4Signer.create(region);
+            if (fnSigner != null) fnSigner.sign(builder, "POST", uri, body, "lambda");
+            else builder.header("Content-Type", "application/json");
+            var response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 400) {
+                String b = response.body();
+                try { var n = new com.fasterxml.jackson.databind.ObjectMapper().readTree(b);
+                    System.err.println(n.has("message") ? n.get("message").asText() : b);
+                } catch (Exception ignored) { System.err.println(b); }
+                System.exit(1);
+            }
+        } catch (Exception e) {
+            System.err.printf("Failed to reach provisioning URL: %s%n", e.getMessage());
+            System.exit(1);
+        }
+    }
+
+    /**
      * POST that tolerates 504 (API Gateway timeout) — the Lambda may have succeeded.
      * Returns null on 504 so the caller can poll to confirm.
      */

@@ -247,6 +247,7 @@ public class EksDXpressControlPlaneStack extends Stack {
             .build();
 
         // Function URL for SSE /stream endpoint (not via API Gateway)
+        // Uses addFunctionUrl() to preserve the existing CloudFormation resource ID
         FunctionUrl tenantFunctionUrl = tenantFn.addFunctionUrl(FunctionUrlOptions.builder()
             .authType(FunctionUrlAuthType.AWS_IAM)
             .invokeMode(InvokeMode.RESPONSE_STREAM)
@@ -256,6 +257,19 @@ public class EksDXpressControlPlaneStack extends Stack {
             .parameterName("/eks-d-xpress/control-plane/api/stream-url")
             .stringValue(tenantFunctionUrl.getUrl())
             .description("EKS-DX tenant SSE stream Function URL — read by CLI")
+            .build();
+
+        // Function URL for POST /tenants provisioning — bypasses API Gateway's 29s timeout
+        FunctionUrl tenantProvisioningUrl = FunctionUrl.Builder.create(this, "TenantProvisioningFunctionUrl")
+            .function(tenantFn)
+            .authType(FunctionUrlAuthType.AWS_IAM)
+            .invokeMode(InvokeMode.BUFFERED)
+            .build();
+
+        StringParameter.Builder.create(this, "TenantProvisioningUrlParam")
+            .parameterName("/eks-d-xpress/control-plane/api/provisioning-url")
+            .stringValue(tenantProvisioningUrl.getUrl())
+            .description("EKS-DX tenant provisioning Function URL — bypasses API Gateway 29s timeout")
             .build();
 
         tenantsTable.grantReadWriteData(tenantFn);

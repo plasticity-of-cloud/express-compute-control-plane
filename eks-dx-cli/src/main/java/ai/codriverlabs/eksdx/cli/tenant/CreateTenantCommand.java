@@ -68,32 +68,33 @@ public class CreateTenantCommand implements Runnable {
             body.put("diskSizeGb", diskSizeGb);
             body.put("assignElasticIp", assignElasticIp);
             if (sshCidr != null) body.put("sshCidr", sshCidr);
-            String resp = apiClient.postTolerant504("/tenants", MAPPER.writeValueAsString(body));
-
-            // null means 504 — Lambda may have succeeded past API Gateway's 29s timeout.
-            // Poll GET /tenants/{id} to confirm before proceeding to stream.
-            if (resp == null) {
-                System.out.println("Request timed out at API Gateway — checking if provisioning started...");
-                long deadline = System.currentTimeMillis() + 30_000;
-                while (System.currentTimeMillis() < deadline) {
-                    Thread.sleep(3_000);
-                    int status = apiClient.getStatus("/tenants/" + tenantId);
-                    if (status == 200) { System.out.println("Provisioning confirmed."); break; }
-                    if (status != 404) continue;
-                }
-                if (apiClient.getStatus("/tenants/" + tenantId) != 200) {
-                    System.err.println("Provisioning did not start within timeout.");
-                    System.exit(1);
-                }
-            }
-
-            if (!wait) {
-                System.out.println(resp);
-                return;
-            }
 
             EksDxConfig config = new EksDxConfig();
             String region = config.getRegion();
+
+            // Use Function URL for provisioning to bypass API Gateway's 29s timeout
+            String provisioningUrl = config.getProvisioningUrl();
+            if (provisioningUrl != null) {
+                String url = provisioningUrl.replaceAll("/$", "") + "/tenants";
+                apiClient.postFunctionUrl(url, MAPPER.writeValueAsString(body), region);
+            } else {
+                // Fallback to API Gateway with 504 tolerance
+                String resp = apiClient.postTolerant504("/tenants", MAPPER.writeValueAsString(body));
+                if (resp == null) {
+                    System.out.println("Request timed out — checking if provisioning started...");
+                    long deadline = System.currentTimeMillis() + 30_000;
+                    while (System.currentTimeMillis() < deadline) {
+                        Thread.sleep(3_000);
+                        if (apiClient.getStatus("/tenants/" + tenantId) == 200) break;
+                    }
+                    if (apiClient.getStatus("/tenants/" + tenantId) != 200) {
+                        System.err.println("Provisioning did not start within timeout.");
+                        System.exit(1);
+                    }
+                }
+            }
+
+            if (!wait) return;
             String resolvedStreamUrl = streamUrl != null ? streamUrl : config.getStreamUrl();
             if (resolvedStreamUrl == null) {
                 System.err.println("Error: stream URL not configured. Set EKS_DX_STREAM_URL or run 'eks-dx configure'.");
