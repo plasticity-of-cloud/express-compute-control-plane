@@ -165,10 +165,9 @@ scp -i "${KEY_PAIR}.pem" -o StrictHostKeyChecking=no \
 sed -i "s|https://127.0.0.1:6443|https://${PUBLIC_IP}:6443|g" "$KUBECONFIG_PATH"
 log "Kubeconfig ready: $KUBECONFIG_PATH"
 
-# ── 4. Install in-cluster components from GHCR (if --version supplied) ──
+# ── 4. Install in-cluster components (if --version supplied) ──────────
 if [[ -n "$EKS_DX_VERSION" ]]; then
-  log "Installing eks-dx-auth-proxy v${EKS_DX_VERSION} from GHCR ..."
-  HELM_REGISTRY="oci://ghcr.io/${GITHUB_ORG}/helm"
+  log "Installing EKS-DX Pod Identity components v${EKS_DX_VERSION} ..."
   export KUBECONFIG="$KUBECONFIG_PATH"
 
   # cert-manager (required for webhook TLS)
@@ -176,24 +175,13 @@ if [[ -n "$EKS_DX_VERSION" ]]; then
   kubectl wait --for=condition=Available deployment/cert-manager-webhook \
     -n cert-manager --timeout=120s
 
-  helm install eks-dx-auth-proxy "${HELM_REGISTRY}/eks-dx-auth-proxy" \
-    --version "${EKS_DX_VERSION}" \
-    --namespace kube-system \
-    --set app.imageConfig.registry=ghcr.io \
-    --set app.imageConfig.repository="${GITHUB_ORG}/eks-dx-auth-proxy" \
-    --set app.imageConfig.tag="${EKS_DX_VERSION}" \
-    --set "app.envs.EKS_DX_ENDPOINT=${EKS_DX_ENDPOINT}" \
-    --set "app.envs.AWS_REGION=${REGION}"
-
-  helm install eks-dx-pod-identity-webhook "${HELM_REGISTRY}/eks-dx-pod-identity-webhook" \
-    --version "${EKS_DX_VERSION}" \
-    --namespace kube-system \
-    --set app.imageConfig.registry=ghcr.io \
-    --set app.imageConfig.repository="${GITHUB_ORG}/eks-dx-pod-identity-webhook" \
-    --set app.imageConfig.tag="${EKS_DX_VERSION}" \
-    --set "app.envs.EKS_DX_ENDPOINT=${EKS_DX_ENDPOINT}" \
-    --set "app.envs.EKS_CLUSTER_NAME=${CLUSTER_NAME}" \
-    --set "app.envs.AWS_REGION=${REGION}"
+  # Run the canonical install script released alongside this version
+  curl -sL "https://github.com/plasticity-of-cloud/eks-d-xpress-control-plane/releases/download/v${EKS_DX_VERSION}/install-eks-dx-pod-identity-${EKS_DX_VERSION}.sh" \
+    | EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}" \
+      CLUSTER_NAME="${CLUSTER_NAME}" \
+      AWS_REGION="${REGION}" \
+      EKS_DX_VERSION="${EKS_DX_VERSION}" \
+      bash
 
   log "In-cluster components installed."
 fi

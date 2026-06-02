@@ -98,6 +98,11 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
+      - name: Stage install script as versioned release asset
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cp scripts/install-eks-dx-pod-identity.sh install-eks-dx-pod-identity-${VERSION}.sh
+
       - name: Build JVM Lambda function.zips (credential + mgmt)
         run: |
           mvn -B -pl eks-dx-model,eks-dx-credential-service package -DskipTests
@@ -149,6 +154,7 @@ jobs:
             eks-dx-auth-proxy-*.tar.gz
             eks-dx-pod-identity-webhook-*.tar.gz
             eks-dx-cdk-*.tar.gz
+            install-eks-dx-pod-identity-*.sh
 
   # Tenant service: GraalVM native image must be built on arm64 runner
   package-tenant-native:

@@ -143,64 +143,31 @@ eks-dx create pod-identity-association \
 
 ### 5. Deploy In-Cluster Components
 
-```bash
-EKS_DX_ENDPOINT=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
+cert-manager is required first for webhook TLS:
 
-# cert-manager (required for TLS certificates)
+```bash
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
 kubectl wait --for=condition=Available deployment/cert-manager-webhook -n cert-manager --timeout=120s
-
-# eks-dx-auth-proxy (Helm chart from GHCR)
-helm install eks-dx-auth-proxy oci://ghcr.io/codriverlabs/helm/eks-dx-auth-proxy \
-  --namespace kube-system \
-  --set app.envs.EKS_DX_ENDPOINT=$EKS_DX_ENDPOINT \
-  --set app.envs.AWS_REGION=us-east-1
-
-# eks-dx-pod-identity-webhook (Helm chart from GHCR)
-helm install eks-dx-pod-identity-webhook oci://ghcr.io/codriverlabs/helm/eks-dx-pod-identity-webhook \
-  --namespace kube-system \
-  --set app.envs.EKS_DX_ENDPOINT=$EKS_DX_ENDPOINT \
-  --set app.envs.EKS_CLUSTER_NAME=my-k3s \
-  --set app.envs.AWS_REGION=us-east-1
 ```
 
-### 6. Deploy EKS Pod Identity Agent
-
-The [EKS Pod Identity Agent](https://github.com/aws/eks-pod-identity-agent) runs as a DaemonSet and intercepts credential requests from pods at the link-local address `169.254.170.23`.
-
-On non-EKS clusters it must be pointed at `eks-dx-auth-proxy` instead of the AWS-managed endpoint:
+Then run the canonical installation script (released alongside each version of eks-dx):
 
 ```bash
-# Pull secret for the agent image (hosted in AWS ECR us-west-2)
-kubectl create secret docker-registry ecr-secret-us-west-2 \
-  --namespace kube-system \
-  --docker-server=602401143452.dkr.ecr.us-west-2.amazonaws.com \
-  --docker-username=AWS \
-  --docker-password="$(aws ecr get-login-password --region us-west-2)"
+EKS_DX_VERSION=1.0.0   # replace with the version you deployed
+EKS_DX_ENDPOINT=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
 
-git clone --depth=1 https://github.com/aws/eks-pod-identity-agent.git /tmp/eks-pod-identity-agent
-
-helm install eks-pod-identity-agent \
-  /tmp/eks-pod-identity-agent/charts/eks-pod-identity-agent \
-  --namespace kube-system \
-  --set clusterName="my-k3s" \
-  --set env.AWS_REGION="us-east-1" \
-  --set "agent.additionalArgs.--endpoint=http://eks-dx-auth-proxy.kube-system.svc.cluster.local:8080" \
-  --set "affinity=" \
-  --set "imagePullSecrets[0].name=ecr-secret-us-west-2"
+curl -sL "https://github.com/plasticity-of-cloud/eks-d-xpress-control-plane/releases/download/v${EKS_DX_VERSION}/install-eks-dx-pod-identity-${EKS_DX_VERSION}.sh" \
+  | EKS_DX_ENDPOINT=$EKS_DX_ENDPOINT \
+    CLUSTER_NAME=my-k3s \
+    AWS_REGION=us-east-1 \
+    EKS_DX_VERSION=$EKS_DX_VERSION \
+    bash
 ```
 
-Key flags:
-- `--endpoint` — redirects the agent to `eks-dx-auth-proxy` instead of the AWS-managed EKS endpoint
-- `--set "affinity="` — removes the EKS node label affinity that would prevent scheduling on non-EKS nodes
-- `imagePullSecrets` — required because the agent image is in AWS ECR public (not Docker Hub)
+The script installs `eks-dx-auth-proxy`, `eks-dx-pod-identity-webhook`, and `eks-pod-identity-agent` in one pass.
+See [`scripts/install-eks-dx-pod-identity.sh`](../../../scripts/install-eks-dx-pod-identity.sh) for the full source.
 
-> **Note:** The ECR login token expires after 12 hours. For production use, consider a tool like [ECR Credential Helper](https://github.com/awslabs/amazon-ecr-credential-helper) or refreshing the secret via a CronJob.
-
-### 7. Test
-
-```bash
-kubectl create serviceaccount my-app
+### 6. Test
 
 kubectl run aws-test --image=amazon/aws-cli:latest --rm -it \
   --overrides='{"spec":{"serviceAccountName":"my-app"}}' \
