@@ -70,29 +70,29 @@ mvn -B -pl eks-dx-model install $SKIP_FLAG
 # 1. Credential service
 if should_build "credential"; then
   echo "--- credential-service"
-  mvn -B -pl eks-dx-credential-service package $SKIP_FLAG
+  mvn -B -pl eks-dx-credential-service clean package $SKIP_FLAG
 fi
 
 # 2. Mgmt service
 if should_build "mgmt"; then
   echo "--- mgmt-service"
-  mvn -B -pl eks-dx-mgmt-service package $SKIP_FLAG
+  mvn -B -pl eks-dx-mgmt-service clean package $SKIP_FLAG
 fi
 
 # 3. Tenant service
 if should_build "tenant"; then
   echo "--- tenant-service"
   if $NATIVE; then
-    mvn -B -pl eks-dx-tenant-service package $SKIP_FLAG -Pnative
+    mvn -B -pl eks-dx-tenant-service clean package $SKIP_FLAG -Pnative
   else
-    mvn -B -pl eks-dx-tenant-service package $SKIP_FLAG
+    mvn -B -pl eks-dx-tenant-service clean package $SKIP_FLAG
   fi
 fi
 
 # 4. Auth proxy
 if should_build "auth-proxy"; then
   echo "--- auth-proxy"
-  mvn -B -pl eks-dx-auth-proxy package $SKIP_FLAG \
+  mvn -B -pl eks-dx-auth-proxy clean package $SKIP_FLAG \
     -Dquarkus.container-image.build=true \
     -Dquarkus.container-image.push=false
 fi
@@ -100,7 +100,7 @@ fi
 # 5. Pod identity webhook
 if should_build "webhook"; then
   echo "--- pod-identity-webhook"
-  mvn -B -pl eks-dx-pod-identity-webhook package $SKIP_FLAG \
+  mvn -B -pl eks-dx-pod-identity-webhook clean package $SKIP_FLAG \
     -Dquarkus.container-image.build=true \
     -Dquarkus.container-image.push=false
 fi
@@ -109,16 +109,16 @@ fi
 if should_build "cli"; then
   echo "--- cli"
   if $NATIVE; then
-    mvn -B -pl eks-dx-cli package $SKIP_FLAG -Pnative
+    mvn -B -pl eks-dx-cli clean package $SKIP_FLAG -Pnative
   else
-    mvn -B -pl eks-dx-cli package $SKIP_FLAG
+    mvn -B -pl eks-dx-cli clean package $SKIP_FLAG
   fi
 fi
 
 # 7. CDK
 if should_build "cdk"; then
   echo "--- cdk validate"
-  mvn -B -pl infra compile exec:java
+  mvn -B -pl infra clean compile exec:java
 fi
 
 echo ""
