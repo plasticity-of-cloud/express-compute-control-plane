@@ -82,12 +82,19 @@ public class CreateTenantCommand implements Runnable {
                 String resp = apiClient.postTolerant504("/tenants", MAPPER.writeValueAsString(body));
                 if (resp == null) {
                     System.out.println("Request timed out — checking if provisioning started...");
+                    String tenantApiUrl = config.getTenantApiUrl();
                     long deadline = System.currentTimeMillis() + 30_000;
                     while (System.currentTimeMillis() < deadline) {
                         Thread.sleep(3_000);
-                        if (apiClient.getStatus("/tenants/" + tenantId) == 200) break;
+                        int st = tenantApiUrl != null
+                            ? apiClient.getStatusOnUrl(tenantApiUrl, "/tenants/" + tenantId)
+                            : apiClient.getStatus("/tenants/" + tenantId);
+                        if (st == 200) break;
                     }
-                    if (apiClient.getStatus("/tenants/" + tenantId) != 200) {
+                    int finalSt = config.getTenantApiUrl() != null
+                        ? apiClient.getStatusOnUrl(config.getTenantApiUrl(), "/tenants/" + tenantId)
+                        : apiClient.getStatus("/tenants/" + tenantId);
+                    if (finalSt != 200) {
                         System.err.println("Provisioning did not start within timeout.");
                         System.exit(1);
                     }

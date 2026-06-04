@@ -74,8 +74,13 @@ public class EksDxApiClient {
 
     /** Returns the HTTP status code without throwing on 4xx/5xx. */
     public int getStatus(String path) {
+        return getStatusOnUrl(endpoint, path);
+    }
+
+    /** Returns the HTTP status code for a given base URL without throwing on 4xx/5xx. */
+    public int getStatusOnUrl(String baseUrl, String path) {
         try {
-            URI uri = URI.create(endpoint + path);
+            URI uri = URI.create(baseUrl.replaceAll("/$", "") + path);
             var builder = HttpRequest.newBuilder().uri(uri).GET();
             if (signer != null) signer.sign(builder, "GET", uri, null, "execute-api");
             else builder.header("Content-Type", "application/json");
@@ -93,9 +98,17 @@ public class EksDxApiClient {
         return send("DELETE", path, null);
     }
 
+    public String deleteOnUrl(String baseUrl, String path) {
+        return sendOnUrl("DELETE", baseUrl, path, null);
+    }
+
     private String send(String method, String path, String body) {
+        return sendOnUrl(method, endpoint, path, body);
+    }
+
+    private String sendOnUrl(String method, String baseUrl, String path, String body) {
         try {
-            URI uri = URI.create(endpoint + path);
+            URI uri = URI.create(baseUrl.replaceAll("/$", "") + path);
             var builder = HttpRequest.newBuilder().uri(uri);
 
             if (body != null) {
@@ -127,7 +140,7 @@ public class EksDxApiClient {
 
             return response.body();
         } catch (Exception e) {
-            System.err.printf("Failed to reach EKS-DX service at %s: %s%n", endpoint, e.getMessage());
+            System.err.printf("Failed to reach EKS-DX service at %s: %s%n", baseUrl, e.getMessage());
             System.exit(1);
             return null;
         }

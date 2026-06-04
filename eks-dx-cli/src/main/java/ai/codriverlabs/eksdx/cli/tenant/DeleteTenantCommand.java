@@ -1,5 +1,6 @@
 package ai.codriverlabs.eksdx.cli.tenant;
 
+import ai.codriverlabs.eksdx.cli.config.EksDxConfig;
 import ai.codriverlabs.eksdx.cli.util.EksDxApiClient;
 import jakarta.inject.Inject;
 import picocli.CommandLine.Command;
@@ -24,7 +25,13 @@ public class DeleteTenantCommand implements Runnable {
     @Override
     public void run() {
         try {
-            apiClient.delete("/tenants/" + tenantId);
+            EksDxConfig config = new EksDxConfig();
+            String tenantApiUrl = config.getTenantApiUrl();
+            if (tenantApiUrl == null) {
+                System.err.println("Error: tenant API URL not configured. Set EKS_DX_TENANT_API_URL or run 'eks-dx configure'.");
+                System.exit(1);
+            }
+            apiClient.deleteOnUrl(tenantApiUrl, "/tenants/" + tenantId);
             System.out.printf("Deprovisioning tenant \"%s\"...%n", tenantId);
 
             if (!wait) return;
@@ -33,7 +40,7 @@ public class DeleteTenantCommand implements Runnable {
             long deadline = System.currentTimeMillis() + 120_000;
             while (System.currentTimeMillis() < deadline) {
                 Thread.sleep(5_000);
-                int status = apiClient.getStatus("/tenants/" + tenantId);
+                int status = apiClient.getStatusOnUrl(tenantApiUrl, "/tenants/" + tenantId);
                 if (status == 404) {
                     System.out.printf("✓ Tenant \"%s\" deprovisioned%n", tenantId);
                     return;
