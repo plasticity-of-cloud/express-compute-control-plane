@@ -89,14 +89,14 @@ public class CreateTenantCommand implements Runnable {
             String url = resolvedStreamUrl.stripTrailing().replaceAll("/$", "")
                 + "/tenants/" + tenantId + "/stream";
 
-            streamProgress(url, region);
+            streamProgress(url, region, System.currentTimeMillis());
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
             System.exit(1);
         }
     }
 
-    private void streamProgress(String url, String region) {
+    private void streamProgress(String url, String region, long startTime) {
         try {
             URI uri = URI.create(url);
             HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -130,7 +130,8 @@ public class CreateTenantCommand implements Runnable {
                     int progress = event.path("progress").asInt();
 
                     if ("text".equals(output)) {
-                        System.out.printf("  [%3d%%] %s%n", progress, phase);
+                        long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                        System.out.printf("  [%3d%%] %s  (+%ds)%n", progress, phase, elapsed);
                     }
 
                     if ("ready".equals(state)) {
