@@ -296,11 +296,11 @@ public class EksDXpressControlPlaneStack extends Stack {
                 String.format("arn:aws:ec2:%s:%s:security-group/*", Stack.of(this).getRegion(), Stack.of(this).getAccount()),
                 String.format("arn:aws:ec2:%s:%s:route-table/*", Stack.of(this).getRegion(), Stack.of(this).getAccount())))
             .build());
-        // EC2: instance lifecycle + EIP allocation/association (elastic-ip ARN doesn't exist yet at AllocateAddress time)
+        // EC2: instance lifecycle + EIP/key creation (resources don't exist yet at creation time)
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
             .actions(List.of(
                 "ec2:RunInstances", "ec2:TerminateInstances",
-                "ec2:CreateKeyPair", "ec2:DeleteKeyPair",
+                "ec2:CreateKeyPair",
                 "ec2:DescribeInstances", "ec2:CreateTags",
                 "ec2:AllocateAddress", "ec2:AssociateAddress"))
             .resources(List.of("*"))
@@ -309,6 +309,13 @@ public class EksDXpressControlPlaneStack extends Stack {
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
             .actions(List.of("ec2:ReleaseAddress", "ec2:DisassociateAddress"))
             .resources(List.of(String.format("arn:aws:ec2:%s:%s:elastic-ip/*",
+                Stack.of(this).getRegion(), Stack.of(this).getAccount())))
+            .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/project", "eks-d-xpress")))
+            .build());
+        // EC2: key pair deletion — scoped to key pairs tagged project=eks-d-xpress
+        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+            .actions(List.of("ec2:DeleteKeyPair"))
+            .resources(List.of(String.format("arn:aws:ec2:%s:%s:key-pair/*",
                 Stack.of(this).getRegion(), Stack.of(this).getAccount())))
             .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/project", "eks-d-xpress")))
             .build());

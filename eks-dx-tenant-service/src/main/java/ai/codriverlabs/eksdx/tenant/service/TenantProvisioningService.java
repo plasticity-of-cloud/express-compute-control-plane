@@ -137,7 +137,13 @@ public class TenantProvisioningService {
             created.signingKeySecret = "eks-d-xpress/tenant/" + tenantId + "/signing-key";
 
             CreateKeyPairResponse keyPairResp = ec2.createKeyPair(CreateKeyPairRequest.builder()
-                .keyName("eks-d-xpress-tenant-" + tenantId).build());
+                .keyName("eks-d-xpress-tenant-" + tenantId)
+                .tagSpecifications(software.amazon.awssdk.services.ec2.model.TagSpecification.builder()
+                    .resourceType(software.amazon.awssdk.services.ec2.model.ResourceType.KEY_PAIR)
+                    .tags(software.amazon.awssdk.services.ec2.model.Tag.builder().key("project").value("eks-d-xpress").build(),
+                          software.amazon.awssdk.services.ec2.model.Tag.builder().key("eks-d-xpress-tenant").value(tenantId).build())
+                    .build())
+                .build());
             created.keyPairName = "eks-d-xpress-tenant-" + tenantId;
 
             String sshKeyArn = secretsManager.createSecret(CreateSecretRequest.builder()
