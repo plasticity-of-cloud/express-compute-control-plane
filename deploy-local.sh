@@ -79,6 +79,8 @@ if $NATIVE; then
 fi
 
 cd infra
+rm -rf cdk.out
+cdk synth
 cdk deploy EksDXpressControlPlaneStack \
   --require-approval never \
   $AWS_PROFILE_ARG \
@@ -87,3 +89,6 @@ cdk deploy EksDXpressControlPlaneStack \
 
 echo ""
 echo "==> Deploy complete"
+
+echo "Removing configuration file $HOME/.eks-d-xpress/config, as URL changed" 
+rm -rf $HOME/.eks-d-xpress/config
