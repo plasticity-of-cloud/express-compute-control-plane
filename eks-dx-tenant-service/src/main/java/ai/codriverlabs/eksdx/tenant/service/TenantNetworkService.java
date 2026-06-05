@@ -36,7 +36,16 @@ public class TenantNetworkService {
 
     private final Ec2Client ec2 = Ec2Client.create();
 
-    public record NetworkResult(String publicSubnetId, String privateSubnetId, String securityGroupId) {}
+    public record NetworkResult(String publicSubnetId, String privateSubnetId, String securityGroupId, String controlPlaneIp) {}
+
+    /**
+     * Subnet IP layout (per /24 tenant subnet):
+     *   .0-.3  — AWS reserved (network, router, DNS, future)
+     *   .4     — reserved for developer workstation / CI runner
+     *   .5     — control-plane node (static, used as --node-ip and controlPlaneEndpoint)
+     *   .6+    — DHCP pool (VPC CNI secondary IPs, future worker nodes)
+     */
+    private static final int CONTROL_PLANE_HOST_OFFSET = 5;
 
     /**
      * Creates per-tenant public subnet, private subnet, and security group.
@@ -98,7 +107,10 @@ public class TenantNetworkService {
         // Security group
         String sgId = createTenantSecurityGroup(tenantId, clusterName, vpcId, vpcCidr, sshCidr);
 
-        return new NetworkResult(publicSubnetId, privateSubnetId, sgId);
+        // Static control-plane IP: <subnet-base>.5
+        String controlPlaneIp = "10.0." + subnetIndex + "." + CONTROL_PLANE_HOST_OFFSET;
+
+        return new NetworkResult(publicSubnetId, privateSubnetId, sgId, controlPlaneIp);
     }
 
     private String createTenantSecurityGroup(String tenantId, String clusterName, String vpcId, String vpcCidr, String sshCidr) {

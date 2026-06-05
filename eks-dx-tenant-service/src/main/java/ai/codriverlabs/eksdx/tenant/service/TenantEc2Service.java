@@ -36,6 +36,7 @@ public class TenantEc2Service {
                                    String subnetId, String securityGroupId, String instanceProfileName,
                                    String keyName, String region, String k8sVersion,
                                    boolean assignElasticIp, int diskSizeGb, String arch,
+                                   String privateIp, String accountId,
                                    TenantProvisioningService.ProvisionedResources created) {
 
         String amiId = ssm.getParameter(GetParameterRequest.builder()
@@ -43,7 +44,7 @@ public class TenantEc2Service {
             .build()).parameter().value();
 
         String userData = Base64.getEncoder().encodeToString(userDataScript(
-            tenantId, clusterName, region, k8sVersion).getBytes());
+            tenantId, clusterName, region, k8sVersion, privateIp, accountId, arch).getBytes());
 
         var runRequest = RunInstancesRequest.builder()
             .imageId(amiId)
@@ -56,6 +57,7 @@ public class TenantEc2Service {
                 .launchTemplateId(launchTemplateId).build())
             .subnetId(subnetId)
             .securityGroupIds(securityGroupId)
+            .privateIpAddress(privateIp)
             .keyName(keyName)
             .iamInstanceProfile(IamInstanceProfileSpecification.builder()
                 .name(instanceProfileName).build())
@@ -124,7 +126,9 @@ public class TenantEc2Service {
     }
 
     private String userDataScript(String tenantId, String clusterName,
-                                  String region, String k8sVersion) {
+                                  String region, String k8sVersion, String nodeIp,
+                                  String accountId, String arch) {
+        String nodeRoleArn = "arn:aws:iam::" + accountId + ":role/" + tenantId + "-eks-dx-" + arch;
         return """
             #!/bin/bash
             mkdir -p /opt/eks-d
@@ -132,15 +136,20 @@ public class TenantEc2Service {
               --name /eks-d-xpress/control-plane/api/endpoint \
               --region %s \
               --query Parameter.Value \
-              --output text)
+              --output text 2>/dev/null || echo "")
             cat > /opt/eks-d/cluster.env <<CONF
             TENANT_ID="%s"
             CLUSTER_NAME="%s"
+            NODE_IP="%s"
+            AWS_ACCOUNT_ID="%s"
+            AWS_REGION="%s"
+            NODE_ROLE_ARN="%s"
+            CLUSTER_ENDPOINT="https://%s:6443"
             EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}"
             EKS_DX_API_URL="${EKS_DX_ENDPOINT}/clusters/%s/assets"
-            REGION="%s"
             K8S_VERSION="%s"
             CONF
-            """.formatted(region, tenantId, clusterName, clusterName, region, k8sVersion);
+            """.formatted(region, tenantId, clusterName, nodeIp, accountId, region,
+                         nodeRoleArn, nodeIp, clusterName, k8sVersion);
     }
 }

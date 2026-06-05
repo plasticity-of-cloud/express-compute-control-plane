@@ -173,7 +173,8 @@ public class TenantProvisioningService {
                 tenantId, clusterName, launchTemplateId,
                 network.publicSubnetId(), network.securityGroupId(),
                 iamResult.instanceProfileName(), "eks-d-xpress-tenant-" + tenantId,
-                region, k8sVersion, assignElasticIp, diskSizeGb, arch, created);
+                region, k8sVersion, assignElasticIp, diskSizeGb, arch,
+                network.controlPlaneIp(), accountId, created);
             created.instanceId = ec2Result.instanceId();
             created.eipAllocationId = ec2Result.eipAllocationId();
 
