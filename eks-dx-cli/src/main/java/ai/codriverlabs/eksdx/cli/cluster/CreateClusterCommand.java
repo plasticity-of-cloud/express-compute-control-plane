@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.inject.Inject;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @Command(name = "cluster", description = "Register a cluster with EKS-DX")
 public class CreateClusterCommand implements Runnable {
@@ -28,25 +30,37 @@ public class CreateClusterCommand implements Runnable {
     @Option(names = "--kubeconfig", description = "Path to kubeconfig (default: ~/.kube/config)")
     String kubeconfig;
 
+    @Option(names = "--issuer", description = "OIDC issuer URL (skips kubeconfig lookup when set)")
+    String issuer;
+
+    @Option(names = "--jwks-file", description = "Path to JWKS JSON file (skips kubeconfig lookup when set)")
+    String jwksFile;
+
     @Override
     public void run() {
         try {
-            KubeApiClient kube = kubeApiClient != null ? kubeApiClient : new KubeApiClient(kubeconfig);
+            String resolvedJwks;
+            String resolvedIssuer;
 
-            String jwks = kube.get("/openid/v1/jwks");
-            String oidcConfig = kube.get("/.well-known/openid-configuration");
-            String issuer = parseIssuer(oidcConfig);
+            if (jwksFile != null && issuer != null) {
+                resolvedJwks = Files.readString(Path.of(jwksFile));
+                resolvedIssuer = issuer;
+            } else {
+                KubeApiClient kube = kubeApiClient != null ? kubeApiClient : new KubeApiClient(kubeconfig);
+                resolvedJwks = kube.get("/openid/v1/jwks");
+                resolvedIssuer = issuer != null ? issuer : parseIssuer(kube.get("/.well-known/openid-configuration"));
+            }
 
             ObjectNode body = mapper.createObjectNode();
             body.put("name", name);
-            body.put("issuer", issuer);
-            body.put("jwks", jwks);
+            body.put("issuer", resolvedIssuer);
+            body.put("jwks", resolvedJwks);
 
             apiClient.post("/clusters", body.toString());
 
             System.out.printf("✓ Cluster \"%s\" registered%n", name);
-            System.out.printf("  Issuer: %s%n", issuer);
-            System.out.printf("  JWKS: %d key(s)%n", countKeys(jwks));
+            System.out.printf("  Issuer: %s%n", resolvedIssuer);
+            System.out.printf("  JWKS: %d key(s)%n", countKeys(resolvedJwks));
         } catch (Exception e) {
             System.err.printf("Failed to register cluster: %s%n", e.getMessage());
             System.exit(1);

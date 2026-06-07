@@ -8,11 +8,11 @@
 #   3. eks-pod-identity-agent — AWS DaemonSet (intercepts 169.254.170.23)
 #
 # Required environment variables:
-#   EKS_DX_ENDPOINT   — API Gateway URL (e.g. https://xxxx.execute-api.us-east-1.amazonaws.com/prod)
 #   CLUSTER_NAME      — unique cluster identifier
 #   AWS_REGION        — AWS region
 #
 # Optional environment variables:
+#   EKS_DX_ENDPOINT   — API Gateway URL override (default: resolved from SSM /eks-d-xpress/control-plane/api/endpoint)
 #   EKS_DX_VERSION    — eks-dx-control-plane release version (default: derived from script filename or "latest")
 #   KUBECONFIG        — path to kubeconfig (default: standard lookup)
 #   CHART_DIR         — directory containing pre-downloaded chart tarballs (AMI bake path)
@@ -20,7 +20,7 @@
 #
 # Usage:
 #   curl -sL https://github.com/plasticity-of-cloud/eks-d-xpress-control-plane/releases/download/vVERSION/install-eks-dx-pod-identity.sh \
-#     | EKS_DX_ENDPOINT=https://... CLUSTER_NAME=my-cluster AWS_REGION=us-east-1 bash
+#     | CLUSTER_NAME=my-cluster AWS_REGION=us-east-1 bash
 #
 set -euo pipefail
 
@@ -30,9 +30,17 @@ warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
 
 # ── Validate required inputs ───────────────────────────────────────────────────
-[[ -z "${EKS_DX_ENDPOINT:-}" ]] && err "EKS_DX_ENDPOINT is required"
 [[ -z "${CLUSTER_NAME:-}"    ]] && err "CLUSTER_NAME is required"
 [[ -z "${AWS_REGION:-}"      ]] && err "AWS_REGION is required"
+
+# ── Resolve EKS_DX_ENDPOINT (env → SSM → error) ───────────────────────────────
+if [[ -z "${EKS_DX_ENDPOINT:-}" ]]; then
+  EKS_DX_ENDPOINT=$(aws ssm get-parameter \
+    --name /eks-d-xpress/control-plane/api/endpoint \
+    --region "${AWS_REGION}" \
+    --query Parameter.Value --output text 2>/dev/null || true)
+fi
+[[ -z "${EKS_DX_ENDPOINT:-}" ]] && err "EKS_DX_ENDPOINT could not be resolved — set env var or ensure SSM param /eks-d-xpress/control-plane/api/endpoint exists"
 
 # Derive version: prefer explicit var, then parse from script filename (when downloaded as release asset)
 if [[ -z "${EKS_DX_VERSION:-}" ]]; then
@@ -73,7 +81,6 @@ kubectl get --raw /openid/v1/jwks > /tmp/eks-dx-jwks.json
 eks-dx create cluster \
   --name "${CLUSTER_NAME}" \
   --region "${AWS_REGION}" \
-  --endpoint "${EKS_DX_ENDPOINT}" \
   --issuer "${ISSUER}" \
   --jwks-file /tmp/eks-dx-jwks.json || warn "Cluster registration returned non-zero (may already be registered)"
 

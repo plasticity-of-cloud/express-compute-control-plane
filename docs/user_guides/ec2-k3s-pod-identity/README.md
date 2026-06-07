@@ -154,14 +154,16 @@ Then run the canonical installation script (released alongside each version of e
 
 ```bash
 EKS_DX_VERSION=1.0.0   # replace with the version you deployed
-EKS_DX_ENDPOINT=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
 
 curl -sL "https://github.com/plasticity-of-cloud/eks-d-xpress-control-plane/releases/download/v${EKS_DX_VERSION}/install-eks-dx-pod-identity-${EKS_DX_VERSION}.sh" \
-  | EKS_DX_ENDPOINT=$EKS_DX_ENDPOINT \
-    CLUSTER_NAME=my-k3s \
+  | CLUSTER_NAME=my-k3s \
     AWS_REGION=us-east-1 \
     EKS_DX_VERSION=$EKS_DX_VERSION \
     bash
+```
+
+The script resolves `EKS_DX_ENDPOINT` from SSM (`/eks-d-xpress/control-plane/api/endpoint`) automatically.
+Pass `EKS_DX_ENDPOINT=<url>` explicitly only if your instance doesn't have SSM access.
 ```
 
 The script installs `eks-dx-auth-proxy`, `eks-dx-pod-identity-webhook`, and `eks-pod-identity-agent` in one pass.
@@ -169,6 +171,7 @@ See [`scripts/install-eks-dx-pod-identity.sh`](../../../scripts/install-eks-dx-p
 
 ### 6. Test
 
+```bash
 kubectl run aws-test --image=amazon/aws-cli:latest --rm -it \
   --overrides='{"spec":{"serviceAccountName":"my-app"}}' \
   -- sts get-caller-identity
