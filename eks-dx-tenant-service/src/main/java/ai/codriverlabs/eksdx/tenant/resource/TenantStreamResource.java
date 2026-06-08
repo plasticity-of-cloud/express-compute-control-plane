@@ -68,12 +68,13 @@ public class TenantStreamResource {
             })
             .select().first(36);
 
-        // Phase 2: emit current state immediately, then poll DynamoDB every 5s, max 96 ticks (8 minutes)
+        // Phase 2: poll DynamoDB every 5s. Fill gap with synthetic "Instance booting..."
+        // events until the boot script writes its first progress update.
         Multi<TenantProgress> dynamoPhase = Multi.createBy().concatenating().streams(
-            Multi.createFrom().item(() -> provisioningService.getProgress(id)),
+            Multi.createFrom().item(() -> gapFill(provisioningService.getProgress(id))),
             Multi.createFrom().ticks().every(Duration.ofSeconds(5))
                 .select().first(96)
-                .map(tick -> provisioningService.getProgress(id))
+                .map(tick -> gapFill(provisioningService.getProgress(id)))
         ).select().first(p -> {
             if (emittedTerminal.get()) return false;
             boolean terminal = "ready".equals(p.state()) || "failed".equals(p.state());
@@ -82,5 +83,18 @@ public class TenantStreamResource {
         });
 
         return Multi.createBy().concatenating().streams(ec2Phase, dynamoPhase);
+    }
+
+    /**
+     * If DynamoDB still shows the initial "EC2 instance launched" state (progress == 0),
+     * the boot script hasn't started writing yet. Emit a synthetic event so the client
+     * sees continuous progress instead of silence.
+     */
+    private TenantProgress gapFill(TenantProgress p) {
+        if (p.progress() == 0 && "provisioning".equals(p.state())) {
+            return new TenantProgress("provisioning", "Instance booting...", 25,
+                p.publicIp(), p.elapsed(), null, null);
+        }
+        return p;
     }
 }
