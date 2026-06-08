@@ -13,7 +13,7 @@
 
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <cdk.version>2.257.0</cdk.version>
+    <cdk.version>2.258.0</cdk.version>
     <constructs.version>10.6.0</constructs.version>
   </properties>
 
