@@ -6,6 +6,7 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    auto-merge: false
     groups:
       quarkus:
         patterns: ["io.quarkus*"]
@@ -19,3 +20,4 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    auto-merge: false
