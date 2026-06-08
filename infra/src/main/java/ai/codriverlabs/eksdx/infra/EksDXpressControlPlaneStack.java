@@ -260,13 +260,13 @@ public class EksDXpressControlPlaneStack extends Stack {
             : "arn:aws:lambda:us-east-1:753240598075:layer:LambdaAdapterLayerX86:25";
         var webAdapterLayer = LayerVersion.fromLayerVersionArn(this, "LambdaWebAdapter", webAdapterLayerArn);
 
-        // With Web Adapter, always use custom runtime — adapter is the bootstrap,
-        // starts Quarkus as HTTP server (native binary or java -jar)
+        // With Web Adapter: JVM mode uses java25 runtime + EXEC_WRAPPER,
+        // native mode uses provided.al2023 (binary is the HTTP server)
         Function tenantFn = Function.Builder.create(this, "EksDxTenantFunction")
             .functionName("eks-d-xpress-tenant-service")
-            .runtime(Runtime.PROVIDED_AL2023)
+            .runtime(jvmMode ? Runtime.JAVA_25 : Runtime.PROVIDED_AL2023)
             .architecture(tenantArch)
-            .handler("bootstrap")
+            .handler(jvmMode ? "run.sh" : "bootstrap")
             .code(Code.fromAsset(root + "eks-dx-tenant-service/target/function.zip"))
             .layers(List.of(webAdapterLayer))
             .memorySize(jvmMode ? 512 : 256)
@@ -282,6 +282,7 @@ public class EksDXpressControlPlaneStack extends Stack {
                 Map.entry("EKS_DX_AVAILABILITY_ZONE", "auto"),
                 Map.entry("EKS_DX_DRY_RUN", String.valueOf(dryRun)),
                 Map.entry("AWS_LWA_INVOKE_MODE", "response_stream"),
+                Map.entry("AWS_LAMBDA_EXEC_WRAPPER", "/opt/bootstrap"),
                 Map.entry("READINESS_CHECK_PATH", "/q/health/ready"),
                 Map.entry("PORT", "8080")))
             .logGroup(tenantLogGroup)
