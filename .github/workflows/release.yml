@@ -134,12 +134,6 @@ jobs:
           cp eks-dx-auth-proxy/target/helm/kubernetes/eks-d-xpress-auth-proxy-${VERSION}.tar.gz eks-dx-auth-proxy-${VERSION}.tar.gz
           cp eks-dx-pod-identity-webhook/target/helm/kubernetes/eks-d-xpress-pod-identity-webhook-${VERSION}.tar.gz eks-dx-pod-identity-webhook-${VERSION}.tar.gz
 
-      - name: Synth and package CDK template
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          mvn -B -pl infra compile exec:java
-          tar czf eks-dx-cdk-${VERSION}.tar.gz -C infra cdk.out
-
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7
         with:
