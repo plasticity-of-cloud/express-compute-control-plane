@@ -175,8 +175,8 @@ jobs:
       - name: Synth and package CDK template
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          cd infra && mvn -B compile exec:java && cd ..
-          tar czf eks-dx-cdk-${VERSION}.tar.gz -C infra cdk.out
+          mvn -B -pl infra compile exec:java
+          tar czf eks-dx-cdk-${VERSION}.tar.gz cdk.out
 
       - name: Upload CDK artifact
         uses: actions/upload-artifact@v7

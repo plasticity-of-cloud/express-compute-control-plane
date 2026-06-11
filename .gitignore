@@ -43,3 +43,4 @@ Thumbs.db
 
 # CDK synth output
 infra/cdk.out/
+cdk.out/
