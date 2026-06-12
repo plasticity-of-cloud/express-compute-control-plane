@@ -15,6 +15,8 @@ import picocli.CommandLine.Command;
         DescribeCommand.class,
         ListCommand.class,
         UpdateCommand.class,
-        DeleteCommand.class
+        DeleteCommand.class,
+        StopCommand.class,
+        ResumeCommand.class
     })
 public class EksDxCommand {}

@@ -109,6 +109,34 @@ public class TenantResource {
         }
     }
 
+    @POST
+    @Path("/{id}/stop")
+    public Response stopTenant(@PathParam("id") String id) {
+        try {
+            provisioningService.stop(id);
+            return Response.accepted().build();
+        } catch (IllegalArgumentException e) {
+            return error(404, "NotFoundException", e.getMessage());
+        } catch (Exception e) {
+            LOG.errorf("Stop tenant error: %s", e.getMessage());
+            return error(500, "InternalServerException", "Internal server error");
+        }
+    }
+
+    @POST
+    @Path("/{id}/resume")
+    public Response resumeTenant(@PathParam("id") String id) {
+        try {
+            provisioningService.resume(id);
+            return Response.accepted().build();
+        } catch (IllegalArgumentException e) {
+            return error(404, "NotFoundException", e.getMessage());
+        } catch (Exception e) {
+            LOG.errorf("Resume tenant error: %s", e.getMessage());
+            return error(500, "InternalServerException", "Internal server error");
+        }
+    }
+
     private Response error(int status, String code, String message) {
         return Response.status(status).entity(Map.of("__type", code, "message", message)).build();
     }

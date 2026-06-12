@@ -13,5 +13,6 @@ public record TenantItem(
     String eipAllocationId,
     String sshKeySecretArn,
     String updatedAt,
-    String error
+    String error,
+    String ec2PricingModel
 ) {}

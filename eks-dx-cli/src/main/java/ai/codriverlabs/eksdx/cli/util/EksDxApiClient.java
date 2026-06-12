@@ -94,6 +94,36 @@ public class EksDxApiClient {
         return sendOnUrl("DELETE", baseUrl, path, null);
     }
 
+    /** POST to a given base URL, returns status code without throwing on 4xx/5xx. */
+    public int postStatusOnUrl(String baseUrl, String path, String body) {
+        try {
+            URI uri = URI.create(baseUrl.replaceAll("/$", "") + path);
+            var builder = HttpRequest.newBuilder().uri(uri)
+                .method("POST", HttpRequest.BodyPublishers.ofString(body))
+                .timeout(java.time.Duration.ofSeconds(35));
+            if (signer != null) signer.sign(builder, "POST", uri, body, "execute-api");
+            else builder.header("Content-Type", "application/json");
+            return httpClient.send(builder.build(), HttpResponse.BodyHandlers.discarding()).statusCode();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** GET body as string from a given base URL, returns null on error. */
+    public String getBodyOnUrl(String baseUrl, String path) {
+        try {
+            URI uri = URI.create(baseUrl.replaceAll("/$", "") + path);
+            var builder = HttpRequest.newBuilder().uri(uri).GET()
+                .timeout(java.time.Duration.ofSeconds(35));
+            if (signer != null) signer.sign(builder, "GET", uri, null, "execute-api");
+            else builder.header("Content-Type", "application/json");
+            var response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() < 400 ? response.body() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** DELETE that returns the status code without throwing on 4xx/5xx. */
     public int deleteStatusOnUrl(String baseUrl, String path) {
         try {

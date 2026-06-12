@@ -188,6 +188,7 @@ public class TenantProvisioningService {
             item.put("progress", AttributeValue.fromN("0"));
             item.put("sshKeySecretArn", AttributeValue.fromS(sshKeyArn));
             item.put("updatedAt", AttributeValue.fromS(now));
+            item.put("ec2PricingModel", AttributeValue.fromS(ec2PricingModel));
             if (ec2Result.eipAllocationId() != null)
                 item.put("eipAllocationId", AttributeValue.fromS(ec2Result.eipAllocationId()));
             dynamoDb.putItem(PutItemRequest.builder().tableName(tenantsTable).item(item).build());
@@ -386,6 +387,46 @@ public class TenantProvisioningService {
             LOG.warnf("EC2 boot tick error for tenant %s: %s", tenantId, e.getMessage());
             return null;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Stop / Resume
+    // -------------------------------------------------------------------------
+
+    public void stop(String tenantId) {
+        TenantItem tenant = getState(tenantId);
+        if (tenant.instanceId() == null)
+            throw new IllegalArgumentException("Tenant has no instance: " + tenantId);
+        boolean isSpot = "spot".equals(tenant.ec2PricingModel());
+        ec2.stopInstances(software.amazon.awssdk.services.ec2.model.StopInstancesRequest.builder()
+            .instanceIds(tenant.instanceId())
+            .hibernate(isSpot)   // spot requires hibernate=true; on-demand uses cold stop
+            .build());
+        updateState(tenantId, isSpot ? "hibernating" : "stopping");
+        LOG.infof("Stopping tenant %s (instance %s, hibernate=%s)", tenantId, tenant.instanceId(), isSpot);
+    }
+
+    public void resume(String tenantId) {
+        TenantItem tenant = getState(tenantId);
+        if (tenant.instanceId() == null)
+            throw new IllegalArgumentException("Tenant has no instance: " + tenantId);
+        ec2.startInstances(software.amazon.awssdk.services.ec2.model.StartInstancesRequest.builder()
+            .instanceIds(tenant.instanceId())
+            .build());
+        updateState(tenantId, "resuming");
+        LOG.infof("Resuming tenant %s (instance %s)", tenantId, tenant.instanceId());
+    }
+
+    private void updateState(String tenantId, String state) {
+        dynamoDb.updateItem(UpdateItemRequest.builder()
+            .tableName(tenantsTable)
+            .key(Map.of("tenantId", AttributeValue.fromS(tenantId)))
+            .updateExpression("SET #s = :s, updatedAt = :t")
+            .expressionAttributeNames(Map.of("#s", "state"))
+            .expressionAttributeValues(Map.of(
+                ":s", AttributeValue.fromS(state),
+                ":t", AttributeValue.fromS(Instant.now().toString())))
+            .build());
     }
 
     // -------------------------------------------------------------------------
@@ -622,7 +663,8 @@ public class TenantProvisioningService {
             s(item, "eipAllocationId"),
             s(item, "sshKeySecretArn"),
             s(item, "updatedAt"),
-            s(item, "error")
+            s(item, "error"),
+            s(item, "ec2PricingModel")
         );
     }
 
