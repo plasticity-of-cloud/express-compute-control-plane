@@ -53,13 +53,12 @@ jobs:
       - name: Build and push proxy image
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          REPO=ghcr.io/${{ github.repository_owner }}
           mvn -B -pl eks-dx-auth-proxy package -DskipTests \
             -Dquarkus.container-image.build=true \
             -Dquarkus.container-image.push=true \
             -Dquarkus.container-image.registry=ghcr.io \
             -Dquarkus.container-image.group=${{ github.repository_owner }} \
-            -Dquarkus.container-image.tag=${VERSION} \
+            -Dquarkus.container-image.tag=${VERSION}-${{ matrix.arch }} \
             -Dquarkus.jib.platforms=${{ matrix.jib-platform }}
 
       - name: Build and push webhook image
@@ -70,7 +69,7 @@ jobs:
             -Dquarkus.container-image.push=true \
             -Dquarkus.container-image.registry=ghcr.io \
             -Dquarkus.container-image.group=${{ github.repository_owner }} \
-            -Dquarkus.container-image.tag=${VERSION} \
+            -Dquarkus.container-image.tag=${VERSION}-${{ matrix.arch }} \
             -Dquarkus.jib.platforms=${{ matrix.jib-platform }}
 
       - name: Build CLI native binary (GraalVM)
@@ -145,6 +144,27 @@ jobs:
             eks-dx-auth-proxy-*.tar.gz
             eks-dx-pod-identity-webhook-*.tar.gz
 
+  merge-manifests:
+    needs: [build]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifests
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          REPO=ghcr.io/${{ github.repository_owner }}
+          for IMAGE in eks-d-xpress-auth-proxy eks-d-xpress-pod-identity-webhook; do
+            docker buildx imagetools create -t ${REPO}/${IMAGE}:${VERSION} \
+              ${REPO}/${IMAGE}:${VERSION}-amd64 \
+              ${REPO}/${IMAGE}:${VERSION}-arm64
+          done
+
   # CDK synth needs all Lambda zips present (including tenant native from arm64 runner)
   package-cdk:
     needs: [package-tenant-native]
@@ -211,7 +231,7 @@ jobs:
           path: eks-dx-tenant-service-*.zip
 
   release:
-    needs: [build, package, package-tenant-native, package-cdk]
+    needs: [build, merge-manifests, package, package-tenant-native, package-cdk]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v8
