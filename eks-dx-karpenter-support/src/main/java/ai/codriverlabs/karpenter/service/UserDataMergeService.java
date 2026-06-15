@@ -27,7 +27,7 @@ public class UserDataMergeService {
 
     private static final Logger LOG = Logger.getLogger(UserDataMergeService.class);
     static final String MANAGED_MARKER = "# eks-dx-managed";
-    static final String CUSTOM = "Custom";
+    public static final String CUSTOM = "Custom";
     private static final String MIME_BOUNDARY = "//";
 
     /**
