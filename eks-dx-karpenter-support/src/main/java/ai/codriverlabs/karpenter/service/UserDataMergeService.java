@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * Merges cluster bootstrap fields into EC2NodeClass spec.userData.
  *
  * <p><b>BottleRocket</b>: injects managed keys into the {@code [settings.kubernetes]} TOML section.
- * <p><b>AL2 / AL2023 / Custom</b>: prepends an {@code application/node.eks.aws} MIME part.
+ * <p><b>AL2023 / Custom</b>: prepends an {@code application/node.eks.aws} MIME part.
  *
  * <p>Both paths are idempotent — if the managed marker is already present the method returns
  * {@code null}, signalling the reconciler/webhook to skip the patch.
@@ -63,11 +63,11 @@ public class UserDataMergeService {
             + "cluster-dns-ip = \"" + id.clusterDnsIp() + "\"";
     }
 
-    // ── AL2 / AL2023 ──────────────────────────────────────────────────────────
+    // ── AL2023 ────────────────────────────────────────────────────────────────
 
     private String mergeAl2(String existing, ClusterIdentity id) {
         if (existing != null && existing.contains("application/node.eks.aws") && existing.contains(MANAGED_MARKER)) {
-            LOG.debugf("AL2 userData already has managed fields — idempotent no-op");
+            LOG.debugf("AL2023 userData already has managed fields — idempotent no-op");
             return null;
         }
         String nodeEksAwsPart = nodeEksAwsPart(id);

@@ -80,8 +80,8 @@ class UserDataMergeServiceTest {
     }
 
     @Test
-    void al2_existingShellScriptWrapped() {
-        String r = service.merge("AL2", "#!/bin/bash\necho hello", ID);
+    void al2023_existingShellScriptWrapped() {
+        String r = service.merge("AL2023", "#!/bin/bash\necho hello", ID);
         assertNotNull(r);
         assertTrue(r.contains("application/node.eks.aws"));
         assertTrue(r.contains("#!/bin/bash"));
