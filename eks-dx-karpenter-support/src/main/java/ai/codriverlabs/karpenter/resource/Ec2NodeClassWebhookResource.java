@@ -43,17 +43,19 @@ public class Ec2NodeClassWebhookResource {
                 return resource;
             }
 
-            String amiFamily = resource.getSpec() != null ? resource.getSpec().getAmiFamily() : null;
+            String nodeVariant = resource.getMetadata().getAnnotations() != null
+                ? resource.getMetadata().getAnnotations().get(UserDataMergeService.NODE_VARIANT_ANNOTATION)
+                : null;
             String existing  = resource.getSpec() != null ? resource.getSpec().getUserData() : null;
 
-            String merged = userDataMergeService.merge(amiFamily, existing, identity);
+            String merged = userDataMergeService.merge(nodeVariant, existing, identity);
             if (merged == null) {
                 LOG.debugf("EC2NodeClass/%s userData already up-to-date — no-op", resource.getMetadata().getName());
                 return resource;
             }
 
-            LOG.infof("Injecting cluster bootstrap fields into EC2NodeClass/%s (amiFamily=%s)",
-                resource.getMetadata().getName(), amiFamily);
+            LOG.infof("Injecting cluster bootstrap fields into EC2NodeClass/%s (node-variant=%s)",
+                resource.getMetadata().getName(), nodeVariant);
             if (resource.getSpec() == null) resource.setSpec(new Ec2NodeClassSpec());
             resource.getSpec().setUserData(merged);
             return resource;

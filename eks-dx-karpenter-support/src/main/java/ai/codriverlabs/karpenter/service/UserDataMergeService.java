@@ -10,43 +10,47 @@ import java.util.regex.Pattern;
 /**
  * Merges cluster bootstrap fields into EC2NodeClass spec.userData.
  *
- * <p><b>BottleRocket</b>: injects managed keys into the {@code [settings.kubernetes]} TOML section.
- * <p><b>AL2023 / Custom</b>: prepends an {@code application/node.eks.aws} MIME part.
+ * <p><b>IMPORTANT — amiFamily must always be {@code Custom}</b>: Karpenter ≥1.10 calls
+ * {@code eks:DescribeCluster} / {@code ResolveClusterCIDR} for any non-Custom amiFamily,
+ * even when {@code eksControlPlane=false}. The actual node OS is indicated by the annotation
+ * {@code eks-dx.codriverlabs.ai/node-variant}, not by {@code spec.amiFamily}.
  *
- * <p>Both paths are idempotent — if the managed marker is already present the method returns
- * {@code null}, signalling the reconciler/webhook to skip the patch.
+ * <p><b>bottlerocket*</b>: injects managed keys into {@code [settings.kubernetes]} TOML.
+ * <p><b>al2023* / everything else</b>: prepends an {@code application/node.eks.aws} MIME part.
+ *
+ * <p>Both paths are idempotent — returns {@code null} if already managed.
  */
 @ApplicationScoped
 public class UserDataMergeService {
 
     private static final Logger LOG = Logger.getLogger(UserDataMergeService.class);
-    /** Written into every managed userData block so idempotency checks are reliable. */
     static final String MANAGED_MARKER = "# eks-dx-managed";
+    /** Annotation on EC2NodeClass that controls userData format — NOT spec.amiFamily. */
+    public static final String NODE_VARIANT_ANNOTATION = "eks-dx.codriverlabs.ai/node-variant";
     private static final String MIME_BOUNDARY = "//";
 
     /**
-     * Merges cluster identity into userData.
-     *
-     * @return merged userData string, or {@code null} if already up-to-date (caller must skip patch)
+     * @param nodeVariant value of annotation {@value NODE_VARIANT_ANNOTATION}
+     *                    (e.g. "bottlerocket", "al2023", "al2023-gpu") — NOT spec.amiFamily
+     * @return merged userData, or {@code null} if already up-to-date (caller must skip patch)
      */
-    public String merge(String amiFamily, String existingUserData, ClusterIdentity identity) {
-        return isBottleRocket(amiFamily)
+    public String merge(String nodeVariant, String existingUserData, ClusterIdentity identity) {
+        return isBottleRocket(nodeVariant)
             ? mergeBottleRocket(existingUserData, identity)
-            : mergeAl2(existingUserData, identity);
+            : mergeAl2023(existingUserData, identity);
     }
 
-    // ── BottleRocket ──────────────────────────────────────────────────────────
+    // ── Bottlerocket ──────────────────────────────────────────────────────────
 
     private String mergeBottleRocket(String existing, ClusterIdentity id) {
         if (existing != null && existing.contains(MANAGED_MARKER)) {
-            LOG.debugf("BottleRocket userData already has managed fields — idempotent no-op");
+            LOG.debugf("Bottlerocket userData already has managed fields — idempotent no-op");
             return null;
         }
         if (existing == null || existing.isBlank()) return tomlBlock(id);
 
         Matcher m = Pattern.compile("(?m)^\\[settings\\.kubernetes\\]\\s*$").matcher(existing);
         if (m.find()) {
-            // Inject managed keys right after the existing section header
             return existing.substring(0, m.end()) + "\n" + tomlKeys(id) + "\n" + existing.substring(m.end());
         }
         return existing + "\n" + tomlBlock(id);
@@ -65,7 +69,7 @@ public class UserDataMergeService {
 
     // ── AL2023 ────────────────────────────────────────────────────────────────
 
-    private String mergeAl2(String existing, ClusterIdentity id) {
+    private String mergeAl2023(String existing, ClusterIdentity id) {
         if (existing != null && existing.contains("application/node.eks.aws") && existing.contains(MANAGED_MARKER)) {
             LOG.debugf("AL2023 userData already has managed fields — idempotent no-op");
             return null;
@@ -74,14 +78,12 @@ public class UserDataMergeService {
         if (existing == null || existing.isBlank()) return buildMime(nodeEksAwsPart, null);
 
         if (existing.startsWith("MIME-Version:")) {
-            // Prepend the node.eks.aws part before existing MIME parts
             int firstPart = existing.indexOf("--" + MIME_BOUNDARY);
             if (firstPart == -1) return buildMime(nodeEksAwsPart, existing);
             return existing.substring(0, firstPart)
                 + "--" + MIME_BOUNDARY + "\n" + nodeEksAwsPart + "\n"
                 + existing.substring(firstPart);
         }
-        // Wrap non-MIME existing content as a shell-script part
         return buildMime(nodeEksAwsPart, existing);
     }
 
@@ -112,7 +114,7 @@ public class UserDataMergeService {
         return sb.toString();
     }
 
-    private boolean isBottleRocket(String amiFamily) {
-        return amiFamily != null && amiFamily.equalsIgnoreCase("Bottlerocket");
+    private boolean isBottleRocket(String nodeVariant) {
+        return nodeVariant != null && nodeVariant.toLowerCase().startsWith("bottlerocket");
     }
 }
