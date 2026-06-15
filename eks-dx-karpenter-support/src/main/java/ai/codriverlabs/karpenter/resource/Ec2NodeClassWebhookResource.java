@@ -26,7 +26,7 @@ import java.util.HashMap;
  *   <li>Rewrites {@code spec.amiFamily} to {@code "Custom"} — prevents Karpenter ≥1.10 from
  *       calling {@code eks:DescribeCluster} when {@code eksControlPlane=false}.
  *   <li>Ensures required tags are present in {@code spec.tags}, preserving customer-supplied tags:
- *       {@code Platform=eks-d-xpress}, {@code Developer=<tenantId>}, {@code ManagedBy=Karpenter}.
+ *       {@code Platform=eks-d-xpress}, {@code Tenant=<tenantId>}, {@code ManagedBy=Karpenter}.
  * </ol>
  *
  * <p>{@code failurePolicy: Ignore} — webhook outage must not block Karpenter.
@@ -73,7 +73,7 @@ public class Ec2NodeClassWebhookResource {
             var tags = resource.getSpec().getTags();
             if (tags == null) { tags = new HashMap<>(); resource.getSpec().setTags(tags); }
             tags.putIfAbsent("Platform", "eks-d-xpress");
-            tags.putIfAbsent("Developer", identity.tenantId());
+            tags.putIfAbsent("Tenant", identity.tenantId());
             tags.putIfAbsent("ManagedBy", "Karpenter");
 
             return resource;

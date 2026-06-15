@@ -115,7 +115,7 @@ class Ec2NodeClassWebhookResourceTest {
 
         var tags = mutated.getSpec().getTags();
         assertEquals("eks-d-xpress", tags.get("Platform"));
-        assertEquals("tenant-123", tags.get("Developer"));
+        assertEquals("tenant-123", tags.get("Tenant"));
         assertEquals("Karpenter", tags.get("ManagedBy"));
     }
 
@@ -132,14 +132,14 @@ class Ec2NodeClassWebhookResourceTest {
     }
 
     @Test
-    void mutate_doesNotOverwriteCustomerDeveloperTag() {
+    void mutate_doesNotOverwriteCustomerTenantTag() {
         var nc = ec2NodeClass("AL2023", null);
-        nc.getSpec().setTags(new java.util.HashMap<>(java.util.Map.of("Developer", "customer-override")));
+        nc.getSpec().setTags(new java.util.HashMap<>(java.util.Map.of("Tenant", "customer-override")));
         when(userDataMergeService.merge(any(), any(), any())).thenReturn("MIME...");
 
         var mutated = mutate(nc);
 
-        assertEquals("customer-override", mutated.getSpec().getTags().get("Developer"));
+        assertEquals("customer-override", mutated.getSpec().getTags().get("Tenant"));
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ class Ec2NodeClassWebhookResourceTest {
         var tags = nc.getSpec().getTags();
         if (tags == null) { tags = new java.util.HashMap<>(); nc.getSpec().setTags(tags); }
         tags.putIfAbsent("Platform", "eks-d-xpress");
-        tags.putIfAbsent("Developer", identity.tenantId());
+        tags.putIfAbsent("Tenant", identity.tenantId());
         tags.putIfAbsent("ManagedBy", "Karpenter");
 
         return nc;
