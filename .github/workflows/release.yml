@@ -213,8 +213,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           mvn -B -pl infra compile exec:java
-          CDK_OUT=$(find . -maxdepth 2 -type d -name cdk.out | head -1)
-          tar czf eks-dx-cdk-${VERSION}.tar.gz -C "$(dirname "$CDK_OUT")" cdk.out
+          tar czf eks-dx-cdk-${VERSION}.tar.gz -C infra cdk.out
 
       - name: Upload CDK artifact
         uses: actions/upload-artifact@v7
