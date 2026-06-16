@@ -93,9 +93,9 @@ jobs:
             eks-dx-cli-*-linux-${{ matrix.arch }}
             eks-dx-tenant-service-*-${{ matrix.arch }}.zip
 
-  # ── package ───────────────────────────────────────────────────────────────
+  # ── build-jvm-based-lambdas ──────────────────────────────────────────────
   # JVM Lambda zips (credential + mgmt) + Helm charts
-  package:
+  build-jvm-based-lambdas:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -178,7 +178,7 @@ jobs:
   # CDK synth uses the arm64 tenant zip (production Lambda arch) from the build job.
   # JVM Lambda zips are taken from the package job artifacts.
   package-cdk:
-    needs: [build, package]
+    needs: [build, build-jvm-based-lambdas]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -230,7 +230,7 @@ jobs:
 
   # ── release ───────────────────────────────────────────────────────────────
   release:
-    needs: [build, multiarch-manifest-build, package, package-cdk]
+    needs: [build, multiarch-manifest-build, build-jvm-based-lambdas, package-cdk]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v8
