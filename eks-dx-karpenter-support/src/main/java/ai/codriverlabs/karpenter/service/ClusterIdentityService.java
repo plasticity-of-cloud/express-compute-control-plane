@@ -71,7 +71,8 @@ public class ClusterIdentityService {
             serviceCidr,
             computeClusterDnsIp(serviceCidr),
             natEnabled,
-            subnetId
+            subnetId,
+            get(eksDxConfig, "security-group-id", null)
         );
     }
 

@@ -12,5 +12,6 @@ public record ClusterIdentity(
     String serviceCidr,
     String clusterDnsIp,
     boolean natGatewayEnabled,    // from eks-dx-config (written by install script from SSM)
-    String karpenterSubnetId      // public when natGateway=false, private when natGateway=true
+    String karpenterSubnetId,     // public when natGateway=false, private when natGateway=true
+    String securityGroupId        // tenant security group for Karpenter nodes
 ) {}

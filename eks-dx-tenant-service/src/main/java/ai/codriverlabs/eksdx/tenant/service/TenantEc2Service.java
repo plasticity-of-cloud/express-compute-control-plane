@@ -46,7 +46,7 @@ public class TenantEc2Service {
 
         String userData = Base64.getEncoder().encodeToString(userDataScript(
             tenantId, clusterName, region, k8sVersion, privateIp, accountId, arch, vpcCidr,
-            publicSubnetId, privateSubnetId).getBytes());
+            publicSubnetId, privateSubnetId, securityGroupId).getBytes());
 
         var runRequest = RunInstancesRequest.builder()
             .imageId(amiId)
@@ -130,7 +130,8 @@ public class TenantEc2Service {
     private String userDataScript(String tenantId, String clusterName,
                                   String region, String k8sVersion, String nodeIp,
                                   String accountId, String arch, String vpcCidr,
-                                  String publicSubnetId, String privateSubnetId) {
+                                  String publicSubnetId, String privateSubnetId,
+                                  String securityGroupId) {
         String nodeRoleArn = "arn:aws:iam::" + accountId + ":role/" + tenantId + "-eks-dx-" + arch;
         return """
             #!/bin/bash
@@ -151,12 +152,13 @@ public class TenantEc2Service {
             POD_SUBNET="%s"
             PUBLIC_SUBNET_ID="%s"
             PRIVATE_SUBNET_ID="%s"
+            SECURITY_GROUP_ID="%s"
             EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}"
             EKS_DX_API_URL="${EKS_DX_ENDPOINT}/clusters/%s/assets"
             K8S_VERSION="%s"
             CONF
             """.formatted(region, tenantId, clusterName, nodeIp, accountId, region,
                          nodeRoleArn, nodeIp, vpcCidr, publicSubnetId, privateSubnetId,
-                         clusterName, k8sVersion);
+                         securityGroupId, clusterName, k8sVersion);
     }
 }

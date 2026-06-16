@@ -86,7 +86,15 @@ public class Ec2NodeClassWebhookResource {
                     List.of(Map.of("id", identity.karpenterSubnetId())));
             }
 
-            // 5. Ensure required tags — merge over customer tags, do not overwrite
+            // 5. Set securityGroupSelectorTerms if known and not already set by customer
+            if (identity.securityGroupId() != null
+                    && (resource.getSpec().getSecurityGroupSelectorTerms() == null
+                        || resource.getSpec().getSecurityGroupSelectorTerms().isEmpty())) {
+                resource.getSpec().setSecurityGroupSelectorTerms(
+                    List.of(Map.of("id", identity.securityGroupId())));
+            }
+
+            // 6. Ensure required tags — merge over customer tags, do not overwrite
             var tags = resource.getSpec().getTags();
             if (tags == null) { tags = new HashMap<>(); resource.getSpec().setTags(tags); }
             tags.putIfAbsent("Platform", "eks-d-xpress");

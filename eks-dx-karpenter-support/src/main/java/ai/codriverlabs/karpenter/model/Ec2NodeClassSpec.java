@@ -12,6 +12,7 @@ public class Ec2NodeClassSpec {
     private Boolean associatePublicIPAddress;
     private List<Map<String, Object>> amiSelectorTerms;
     private List<Map<String, Object>> subnetSelectorTerms;
+    private List<Map<String, Object>> securityGroupSelectorTerms;
     private Map<String, String> tags;
 
     public String getAmiFamily() { return amiFamily; }
@@ -28,6 +29,9 @@ public class Ec2NodeClassSpec {
 
     public List<Map<String, Object>> getSubnetSelectorTerms() { return subnetSelectorTerms; }
     public void setSubnetSelectorTerms(List<Map<String, Object>> v) { this.subnetSelectorTerms = v; }
+
+    public List<Map<String, Object>> getSecurityGroupSelectorTerms() { return securityGroupSelectorTerms; }
+    public void setSecurityGroupSelectorTerms(List<Map<String, Object>> v) { this.securityGroupSelectorTerms = v; }
 
     public Map<String, String> getTags() { return tags; }
     public void setTags(Map<String, String> v) { this.tags = v; }
