@@ -1,8 +1,8 @@
 package ai.codriverlabs.karpenter.model;
 
 /**
- * Cluster bootstrap fields required by Karpenter EC2NodeClass userData and tags.
- * Resolved from in-cluster Kubernetes API sources and cached with a 5-minute TTL.
+ * Cluster bootstrap fields resolved from in-cluster Kubernetes API sources.
+ * Cached with a 5-minute TTL by ClusterIdentityService.
  */
 public record ClusterIdentity(
     String clusterName,
@@ -10,5 +10,6 @@ public record ClusterIdentity(
     String apiServerEndpoint,
     String certificateAuthority,  // base64-encoded PEM
     String serviceCidr,
-    String clusterDnsIp
+    String clusterDnsIp,
+    boolean natGatewayEnabled     // from eks-dx-config configmap (written by install script from SSM)
 ) {}

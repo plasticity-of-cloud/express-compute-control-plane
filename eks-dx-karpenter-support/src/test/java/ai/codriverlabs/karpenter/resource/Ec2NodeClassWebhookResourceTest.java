@@ -23,7 +23,7 @@ class Ec2NodeClassWebhookResourceTest {
     @Mock UserDataMergeService userDataMergeService;
 
     static final ClusterIdentity ID = new ClusterIdentity(
-        "my-cluster", "tenant-123", "https://10.0.0.1:6443", "base64ca==", "10.96.0.0/12", "10.96.0.10"
+        "my-cluster", "tenant-123", "https://10.0.0.1:6443", "base64ca==", "10.96.0.0/12", "10.96.0.10", false
     );
 
     @BeforeEach

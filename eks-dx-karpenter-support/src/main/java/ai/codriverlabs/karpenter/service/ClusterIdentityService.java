@@ -1,6 +1,7 @@
 package ai.codriverlabs.karpenter.service;
 
 import ai.codriverlabs.karpenter.model.ClusterIdentity;
+import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -14,17 +15,14 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Resolves and caches Karpenter cluster bootstrap fields from in-cluster sources.
  *
- * <p>Sources per roadmap spec (NODEPOOL_CONTROLLER_MIGRATION.md):
- * <ul>
- *   <li>apiServerEndpoint  — endpoints/kubernetes in default namespace</li>
- *   <li>certificateAuthority — configmap/kube-root-ca.crt in kube-system (base64-encoded)</li>
- *   <li>serviceCidr — configmap/kubeadm-config → ClusterConfiguration.serviceSubnet;
- *       fallback: configmap/eks-dx-config serviceSubnet key</li>
- *   <li>clusterDnsIp — 10th host of serviceCidr</li>
- *   <li>clusterName — configmap/eks-dx-config cluster-name key</li>
- * </ul>
+ * Sources:
+ * - apiServerEndpoint  — client.getMasterUrl() (in-cluster config, no API call)
+ * - certificateAuthority — configmap/kube-root-ca.crt in kube-system (base64-encoded)
+ * - serviceCidr — configmap/kubeadm-config ClusterConfiguration.serviceSubnet
+ * - clusterName, tenantId, natGatewayEnabled — configmap/eks-dx-config
+ *   (written by 18-install-eks-dx-karpenter-support.sh at cluster bootstrap)
  *
- * <p>TTL: 5 minutes. Call {@link #refresh()} to force an immediate re-resolve.
+ * TTL: 5 minutes.
  */
 @ApplicationScoped
 public class ClusterIdentityService {
@@ -32,16 +30,13 @@ public class ClusterIdentityService {
     private static final Logger LOG = Logger.getLogger(ClusterIdentityService.class);
     private static final long TTL_SECONDS = 300;
 
-    @Inject
-    KubernetesClient client;
+    @Inject KubernetesClient client;
 
     private final AtomicReference<ClusterIdentity> cache = new AtomicReference<>();
     private volatile Instant refreshAt = Instant.EPOCH;
 
     public ClusterIdentity get() {
-        if (Instant.now().isAfter(refreshAt)) {
-            refresh();
-        }
+        if (Instant.now().isAfter(refreshAt)) refresh();
         return cache.get();
     }
 
@@ -50,44 +45,42 @@ public class ClusterIdentityService {
             var identity = resolve();
             cache.set(identity);
             refreshAt = Instant.now().plusSeconds(TTL_SECONDS);
-            LOG.infof("Resolved cluster identity: cluster=%s endpoint=%s serviceCidr=%s dnsIp=%s",
-                identity.clusterName(), identity.apiServerEndpoint(),
+            LOG.infof("Resolved cluster identity: cluster=%s natGateway=%s serviceCidr=%s dnsIp=%s",
+                identity.clusterName(), identity.natGatewayEnabled(),
                 identity.serviceCidr(), identity.clusterDnsIp());
         } catch (Exception e) {
             LOG.errorf("Failed to resolve cluster identity: %s", e.getMessage());
             if (cache.get() == null) throw new IllegalStateException("Cluster identity unavailable", e);
-            // Keep stale cache rather than returning null
         }
     }
 
     private ClusterIdentity resolve() throws Exception {
-        String serviceCidr = resolveServiceCidr();
+        // Read eks-dx-config once for all keys
+        ConfigMap eksDxConfig = client.configMaps().inNamespace("kube-system").withName("eks-dx-config").get();
+        String serviceCidr = resolveServiceCidr(eksDxConfig);
         return new ClusterIdentity(
-            resolveClusterName(),
-            resolveTenantId(),
+            get(eksDxConfig, "cluster-name", "default"),
+            get(eksDxConfig, "tenant-id", ""),
             resolveApiServerEndpoint(),
             resolveCertificateAuthority(),
             serviceCidr,
-            computeClusterDnsIp(serviceCidr)
+            computeClusterDnsIp(serviceCidr),
+            "true".equalsIgnoreCase(get(eksDxConfig, "nat-gateway-enabled", "false"))
         );
     }
 
     private String resolveApiServerEndpoint() {
-        // client.getMasterUrl() is resolved from the in-cluster config (/var/run/secrets +
-        // KUBERNETES_SERVICE_HOST/PORT) by Fabric8 at startup — no API call or RBAC needed.
         String url = client.getMasterUrl().toString();
-        // Strip trailing slash for consistency
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
     private String resolveCertificateAuthority() {
         var cm = client.configMaps().inNamespace("kube-system").withName("kube-root-ca.crt").get();
-        if (cm == null) throw new IllegalStateException("configmap/kube-root-ca.crt not found in kube-system");
+        if (cm == null) throw new IllegalStateException("configmap/kube-root-ca.crt not found");
         return Base64.getEncoder().encodeToString(cm.getData().get("ca.crt").getBytes());
     }
 
-    private String resolveServiceCidr() {
-        // Primary: kubeadm-config ClusterConfiguration.serviceSubnet
+    private String resolveServiceCidr(ConfigMap eksDxConfig) {
         var kubeadm = client.configMaps().inNamespace("kube-system").withName("kubeadm-config").get();
         if (kubeadm != null) {
             for (String line : kubeadm.getData().getOrDefault("ClusterConfiguration", "").split("\n")) {
@@ -95,40 +88,24 @@ public class ClusterIdentityService {
                 if (t.startsWith("serviceSubnet:")) return t.substring("serviceSubnet:".length()).trim();
             }
         }
-        // Fallback: eks-dx-config (written by the eks-dx CLI at cluster registration)
-        var eksDxConfig = client.configMaps().inNamespace("kube-system").withName("eks-dx-config").get();
-        if (eksDxConfig != null && eksDxConfig.getData().containsKey("serviceSubnet"))
-            return eksDxConfig.getData().get("serviceSubnet");
+        String fallback = get(eksDxConfig, "serviceSubnet", null);
+        if (fallback != null) return fallback;
         throw new IllegalStateException("serviceCidr not found in kubeadm-config or eks-dx-config");
     }
 
-    private String resolveClusterName() {
-        var cm = client.configMaps().inNamespace("kube-system").withName("eks-dx-config").get();
-        if (cm != null && cm.getData().containsKey("cluster-name")) return cm.getData().get("cluster-name");
-        LOG.warn("eks-dx-config missing cluster-name key — using 'default'");
-        return "default";
+    private String get(ConfigMap cm, String key, String defaultValue) {
+        if (cm != null && cm.getData() != null && cm.getData().containsKey(key))
+            return cm.getData().get(key);
+        if (defaultValue != null) LOG.warnf("eks-dx-config missing key '%s', using '%s'", key, defaultValue);
+        return defaultValue;
     }
 
-    private String resolveTenantId() {
-        var cm = client.configMaps().inNamespace("kube-system").withName("eks-dx-config").get();
-        if (cm != null && cm.getData().containsKey("tenant-id")) return cm.getData().get("tenant-id");
-        LOG.warn("eks-dx-config missing tenant-id key");
-        return "";
-    }
-
-    /**
-     * Returns the 10th host address in the given CIDR.
-     * e.g. 10.96.0.0/12 → 10.96.0.10, 172.20.0.0/16 → 172.20.0.10
-     */
+    /** Returns the 10th host address in the given CIDR (e.g. 10.96.0.0/12 → 10.96.0.10). */
     static String computeClusterDnsIp(String cidr) throws Exception {
         String[] parts = cidr.split("/");
         byte[] addr = InetAddress.getByName(parts[0]).getAddress();
         int prefix = Integer.parseInt(parts[1]);
-        // Zero out host bits to get the network address
-        for (int i = prefix; i < 32; i++) {
-            addr[i / 8] &= (byte) ~(1 << (7 - (i % 8)));
-        }
-        // Add 10
+        for (int i = prefix; i < 32; i++) addr[i / 8] &= (byte) ~(1 << (7 - (i % 8)));
         int carry = 10;
         for (int i = 3; i >= 0 && carry > 0; i--) {
             int sum = (addr[i] & 0xFF) + carry;

@@ -69,7 +69,14 @@ public class Ec2NodeClassWebhookResource {
                     resource.getMetadata().getName(), originalAmiFamily);
             }
 
-            // 3. Ensure required tags — merge over customer tags, do not overwrite
+            // 3. Set associatePublicIPAddress based on NAT gateway availability
+            // nat=true → private egress via NAT, no public IP needed → false
+            // nat=false → direct internet access required → true
+            if (resource.getSpec().getAssociatePublicIPAddress() == null) {
+                resource.getSpec().setAssociatePublicIPAddress(!identity.natGatewayEnabled());
+            }
+
+            // 4. Ensure required tags — merge over customer tags, do not overwrite
             var tags = resource.getSpec().getTags();
             if (tags == null) { tags = new HashMap<>(); resource.getSpec().setTags(tags); }
             tags.putIfAbsent("Platform", "eks-d-xpress");
