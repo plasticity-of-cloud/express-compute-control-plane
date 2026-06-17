@@ -62,6 +62,10 @@ $SKIP_TESTS && SKIP_FLAG="-DskipTests"
 
 echo "==> Building eks-dx-control-plane (native=${NATIVE}, skipTests=${SKIP_TESTS}, only=${ONLY:-all})"
 
+# Resolve version from git tag (strip leading 'v' and any -N-gSHA suffix)
+IMAGE_TAG=$(git describe --tags 2>/dev/null | sed 's/^v//;s/-[0-9]*-g[0-9a-f]*$//' || echo "latest")
+echo "==> Image tag: ${IMAGE_TAG}"
+
 # 0. Parent POM + model (always — required for dependency resolution)
 echo "--- [0] parent pom + model"
 mvn -B -N install $SKIP_FLAG
@@ -94,7 +98,8 @@ if should_build "auth-proxy"; then
   echo "--- auth-proxy"
   mvn -B -pl eks-dx-auth-proxy clean package $SKIP_FLAG \
     -Dquarkus.container-image.build=true \
-    -Dquarkus.container-image.push=false
+    -Dquarkus.container-image.push=false \
+    -Dquarkus.container-image.tag=${IMAGE_TAG}
 fi
 
 # 5. Pod identity webhook
@@ -102,7 +107,9 @@ if should_build "webhook"; then
   echo "--- pod-identity-webhook"
   mvn -B -pl eks-dx-pod-identity-webhook clean package $SKIP_FLAG \
     -Dquarkus.container-image.build=true \
-    -Dquarkus.container-image.push=false
+    -Dquarkus.container-image.push=false \
+    -Dquarkus.container-image.tag=${IMAGE_TAG} \
+    -Dquarkus.helm.version=${IMAGE_TAG}
 fi
 
 # 5b. Karpenter support (EC2NodeClass webhook + ValidationSucceeded controller)
@@ -111,11 +118,15 @@ if should_build "karpenter"; then
   if $NATIVE; then
     mvn -B -pl eks-dx-karpenter-support clean package $SKIP_FLAG -Pnative \
       -Dquarkus.container-image.build=true \
-      -Dquarkus.container-image.push=false
+      -Dquarkus.container-image.push=false \
+      -Dquarkus.container-image.tag=${IMAGE_TAG} \
+      -Dquarkus.helm.version=${IMAGE_TAG}
   else
     mvn -B -pl eks-dx-karpenter-support clean package $SKIP_FLAG \
       -Dquarkus.container-image.build=true \
-      -Dquarkus.container-image.push=false
+      -Dquarkus.container-image.push=false \
+      -Dquarkus.container-image.tag=${IMAGE_TAG} \
+      -Dquarkus.helm.version=${IMAGE_TAG}
   fi
 fi
 
