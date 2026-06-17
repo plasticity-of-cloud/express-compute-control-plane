@@ -80,6 +80,14 @@ image_flags() {
   echo "$flags"
 }
 
+# Ensure ECR repository exists (create if missing); no-op for non-ECR registries
+ensure_ecr_repo() {
+  local repo="$1"
+  [[ -z "${ECR_REGION:-}" ]] && return
+  aws ecr describe-repositories --repository-names "$repo" --region "$ECR_REGION" &>/dev/null \
+    || aws ecr create-repository --repository-name "$repo" --region "$ECR_REGION" --image-scanning-configuration scanOnPush=true --query 'repository.repositoryName' --output text
+}
+
 echo "==> Building eks-dx-control-plane (native=${NATIVE}, skipTests=${SKIP_TESTS}, only=${ONLY:-all}, push=${PUSH}, registry=${REGISTRY:-default})"
 
 # ECR login if pushing to ECR
@@ -124,12 +132,14 @@ fi
 # 4. Auth proxy
 if should_build "auth-proxy"; then
   echo "--- auth-proxy"
+  ensure_ecr_repo "codriverlabs/eks-d-xpress-auth-proxy"
   mvn -B -pl eks-dx-auth-proxy clean package $SKIP_FLAG $(image_flags)
 fi
 
 # 5. Pod identity webhook
 if should_build "webhook"; then
   echo "--- pod-identity-webhook"
+  ensure_ecr_repo "codriverlabs/eks-d-xpress-pod-identity-webhook"
   mvn -B -pl eks-dx-pod-identity-webhook clean package $SKIP_FLAG $(image_flags) \
     -Dquarkus.helm.version=${IMAGE_TAG}
 fi
@@ -137,6 +147,7 @@ fi
 # 5b. Karpenter support (EC2NodeClass webhook + ValidationSucceeded controller)
 if should_build "karpenter"; then
   echo "--- karpenter-support"
+  ensure_ecr_repo "plasticity-of-cloud/eks-dx-karpenter-support"
   if $NATIVE; then
     mvn -B -pl eks-dx-karpenter-support clean package $SKIP_FLAG -Pnative $(image_flags) \
       -Dquarkus.helm.version=${IMAGE_TAG}
