@@ -31,25 +31,42 @@ class Ec2NodeClassReconcilerTest {
 
     @Test
     void reconcile_noOp_whenAlreadySucceeded() {
+        var nc = ec2NodeClass("default");
+        mockClientGet("default", nc);
         when(validationConditionService.isValidationSucceeded(any())).thenReturn(true);
-        reconciler.reconcile(ec2NodeClass("default"));
+
+        reconciler.reconcile("default");
+
         verify(validationConditionService, never()).setValidationSucceeded(any());
-        verifyNoInteractions(client);
     }
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
     void reconcile_patchesStatus_whenConditionMissing() {
+        var nc = ec2NodeClass("default");
         when(validationConditionService.isValidationSucceeded(any())).thenReturn(false);
+
+        var op = mock(io.fabric8.kubernetes.client.dsl.MixedOperation.class);
+        Resource getResource = mock(Resource.class);
+        Resource patchResource = mock(Resource.class);
+        when(client.resources(Ec2NodeClass.class)).thenReturn(op);
+        when(op.withName("default")).thenReturn(getResource);
+        when(getResource.get()).thenReturn(nc);
+        when(op.resource(any())).thenReturn(patchResource);
+
+        reconciler.reconcile("default");
+
+        verify(validationConditionService).setValidationSucceeded(any());
+        verify(patchResource).patchStatus();
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void mockClientGet(String name, Ec2NodeClass nc) {
         var op = mock(io.fabric8.kubernetes.client.dsl.MixedOperation.class);
         Resource resource = mock(Resource.class);
         when(client.resources(Ec2NodeClass.class)).thenReturn(op);
-        when(op.resource(any())).thenReturn(resource);
-
-        reconciler.reconcile(ec2NodeClass("default"));
-
-        verify(validationConditionService).setValidationSucceeded(any());
-        verify(resource).patchStatus();
+        when(op.withName(name)).thenReturn(resource);
+        when(resource.get()).thenReturn(nc);
     }
 
     private Ec2NodeClass ec2NodeClass(String name) {
