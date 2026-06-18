@@ -96,7 +96,7 @@ webhooks:
       namespace: kube-system
       name: eks-dx-karpenter-support
       path: /mutate-ec2nodeclass
-      port: 8443
+      port: 443
   admissionReviewVersions: ["v1"]
   sideEffects: None
   timeoutSeconds: 5
