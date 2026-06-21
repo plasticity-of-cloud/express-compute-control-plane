@@ -99,7 +99,11 @@ public class TenantIamService {
                   "Sid": "EksDxApiInvoke",
                   "Effect": "Allow",
                   "Action": "execute-api:Invoke",
-                  "Resource": "arn:aws:execute-api:%s:%s:*/*/POST/clusters/%s"
+                  "Resource": [
+                    "arn:aws:execute-api:%s:%s:*/*/POST/clusters",
+                    "arn:aws:execute-api:%s:%s:*/*/POST/clusters/%s",
+                    "arn:aws:execute-api:%s:%s:*/*/POST/clusters/%s/pod-identity-associations"
+                  ]
                 },
                 {
                   "Sid": "TenantStateUpdate",
@@ -297,7 +301,9 @@ public class TenantIamService {
             }
             """.formatted(
                 region, accountId, tenantId,       // SecretsAccess
-                region, accountId, clusterName,    // EksDxApiInvoke
+                region, accountId,                 // EksDxApiInvoke POST /clusters
+                region, accountId, clusterName,    // EksDxApiInvoke POST /clusters/{name}
+                region, accountId, clusterName,    // EksDxApiInvoke POST /clusters/{name}/pod-identity-associations
                 region, accountId, tenantId,       // TenantStateUpdate
                 region,                            // KarpenterResourceDiscovery
                 accountId, clusterName,            // KarpenterIAMInstanceProfile
