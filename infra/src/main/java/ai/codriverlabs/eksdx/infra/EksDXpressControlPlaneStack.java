@@ -74,9 +74,20 @@ public class EksDXpressControlPlaneStack extends Stack {
         Tags.of(this).add("Project", "eks-d-xpress-control-plane");
 
         // Resolve asset paths: works whether invoked from project root (mvn -pl infra)
-        // or from infra/ directory (cdk synth)
-        String root = Path.of("eks-dx-credential-service").toFile().isDirectory()
-            ? "" : "../";
+        // or from infra/ directory (cdk synth), or from release bundle (--context assetsDir=../assets)
+        String assetsDir = (String) this.getNode().tryGetContext("assetsDir");
+        String credentialZip, mgmtZip, tenantZip;
+        if (assetsDir != null) {
+            String base = assetsDir.endsWith("/") ? assetsDir : assetsDir + "/";
+            credentialZip = base + "credential-service.zip";
+            mgmtZip = base + "mgmt-service.zip";
+            tenantZip = base + "tenant-service.zip";
+        } else {
+            String root = Path.of("eks-dx-credential-service").toFile().isDirectory() ? "" : "../";
+            credentialZip = root + "eks-dx-credential-service/target/function.zip";
+            mgmtZip = root + "eks-dx-mgmt-service/target/function.zip";
+            tenantZip = root + "eks-dx-tenant-service/target/function.zip";
+        }
 
         // -----------------------------------------------------------------------
         // Parameters
@@ -175,7 +186,7 @@ public class EksDXpressControlPlaneStack extends Stack {
             .functionName("eks-d-xpress-credential-service")
             .runtime(Runtime.JAVA_25)
             .handler("io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest")
-            .code(Code.fromAsset(root + "eks-dx-credential-service/target/function.zip"))
+            .code(Code.fromAsset(credentialZip))
             .memorySize(512)
             .timeout(Duration.seconds(30))
             .environment(Map.of(
@@ -211,7 +222,7 @@ public class EksDXpressControlPlaneStack extends Stack {
             .functionName("eks-d-xpress-mgmt-service")
             .runtime(Runtime.JAVA_25)
             .handler("io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest")
-            .code(Code.fromAsset(root + "eks-dx-mgmt-service/target/function.zip"))
+            .code(Code.fromAsset(mgmtZip))
             .memorySize(256)
             .timeout(Duration.seconds(30))
             .environment(Map.of(
@@ -268,7 +279,7 @@ public class EksDXpressControlPlaneStack extends Stack {
             .runtime(jvmMode ? Runtime.JAVA_25 : Runtime.PROVIDED_AL2023)
             .architecture(tenantArch)
             .handler(jvmMode ? "run.sh" : "bootstrap")
-            .code(Code.fromAsset(root + "eks-dx-tenant-service/target/function.zip"))
+            .code(Code.fromAsset(tenantZip))
             .layers(List.of(webAdapterLayer))
             .memorySize(jvmMode ? 512 : 256)
             .timeout(Duration.seconds(900))
