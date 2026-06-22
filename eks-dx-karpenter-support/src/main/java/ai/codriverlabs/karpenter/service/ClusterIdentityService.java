@@ -77,6 +77,17 @@ public class ClusterIdentityService {
     }
 
     private String resolveApiServerEndpoint() {
+        var kubeadm = client.configMaps().inNamespace("kube-system").withName("kubeadm-config").get();
+        if (kubeadm != null) {
+            for (String line : kubeadm.getData().getOrDefault("ClusterConfiguration", "").split("\n")) {
+                String t = line.trim();
+                if (t.startsWith("controlPlaneEndpoint:")) {
+                    String endpoint = t.substring("controlPlaneEndpoint:".length()).trim();
+                    return endpoint.startsWith("https://") ? endpoint : "https://" + endpoint;
+                }
+            }
+        }
+        // Fallback to in-cluster client URL (works only inside the cluster)
         String url = client.getMasterUrl().toString();
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }

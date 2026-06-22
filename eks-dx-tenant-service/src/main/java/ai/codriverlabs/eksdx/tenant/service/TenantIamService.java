@@ -199,6 +199,12 @@ public class TenantIamService {
                   }
                 },
                 {
+                  "Sid": "KarpenterAuthChecks",
+                  "Effect": "Allow",
+                  "Action": ["ec2:CreateLaunchTemplate", "ec2:CreateTags", "ec2:CreateFleet", "ec2:RunInstances"],
+                  "Resource": "*"
+                },
+                {
                   "Sid": "KarpenterCreateWithTags",
                   "Effect": "Allow",
                   "Action": ["ec2:RunInstances", "ec2:CreateFleet", "ec2:CreateLaunchTemplate"],
@@ -211,10 +217,7 @@ public class TenantIamService {
                     "arn:aws:ec2:%s:*:spot-instances-request/*"
                   ],
                   "Condition": {
-                    "StringEquals": {
-                      "aws:RequestTag/kubernetes.io/cluster/%s": "owned",
-                      "aws:RequestTag/eks:eks-cluster-name": "%s"
-                    },
+                    "StringEquals": { "aws:RequestTag/kubernetes.io/cluster/%s": "owned" },
                     "StringLike": { "aws:RequestTag/karpenter.sh/nodepool": "*" }
                   }
                 },
@@ -318,8 +321,9 @@ public class TenantIamService {
                 region,                            // KarpenterResourceDiscovery
                 accountId, clusterName,            // KarpenterIAMInstanceProfile
                 region, region, region, region, region, region, // KarpenterInstanceAccessActions
-                region, clusterName,               // KarpenterLaunchTemplateAccess
-                region, region, region, region, region, region, clusterName, clusterName, // KarpenterCreateWithTags
+                region, clusterName,                        // KarpenterLaunchTemplateAccess
+                // KarpenterAuthChecks — Resource: * needs no format args
+                region, region, region, region, region, region, clusterName, // KarpenterCreateWithTags
                 region, region, region, region, region, region, clusterName, // KarpenterTagOnCreate
                 region, clusterName,               // KarpenterTagInstances
                 region, region, clusterName,       // KarpenterDelete
