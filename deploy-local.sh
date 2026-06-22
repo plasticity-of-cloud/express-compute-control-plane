@@ -80,9 +80,10 @@ fi
 
 cd infra
 rm -rf cdk.out
-cdk synth
+cdk synth --context development=true
 cdk deploy EksDXpressControlPlaneStack \
   --require-approval never \
+  --context development=true \
   $AWS_PROFILE_ARG \
   $ARCH_CONTEXT \
   $CDK_CONTEXT_ARGS
