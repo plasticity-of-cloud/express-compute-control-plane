@@ -197,7 +197,7 @@ jobs:
       - name: Bundle CDK project with pre-built assets
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          BUNDLE="eks-dx-cdk-${VERSION}"
+          BUNDLE="eks-d-xpress-control-plane-cdk-${VERSION}"
           mkdir -p "${BUNDLE}/assets"
 
           # CDK source
@@ -240,14 +240,14 @@ jobs:
           No need to rebuild Lambda code — pre-built zips are in `assets/`.
           EOF
 
-          tar czf "eks-dx-cdk-${VERSION}.tar.gz" "${BUNDLE}"
+          tar czf "eks-d-xpress-control-plane-cdk-${VERSION}.tar.gz" "${BUNDLE}"
 
       - name: Upload CDK artifact
         uses: actions/upload-artifact@v7
         with:
           name: release-cdk
           retention-days: 1
-          path: eks-dx-cdk-*.tar.gz
+          path: eks-d-xpress-control-plane-cdk-*.tar.gz
 
   # ── release ───────────────────────────────────────────────────────────────
   release:
