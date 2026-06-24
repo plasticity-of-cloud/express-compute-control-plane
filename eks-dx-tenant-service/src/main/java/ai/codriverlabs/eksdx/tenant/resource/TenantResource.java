@@ -47,6 +47,18 @@ public class TenantResource {
         try {
             if (request == null || request.tenantId == null || request.tenantId.isBlank())
                 return error(400, "InvalidParameterException", "tenantId is required");
+
+            String callerArn = (String) ctx.getProperty("callerArn");
+            if (callerArn == null || callerArn.isBlank())
+                return error(403, "AccessDeniedException", "Cannot resolve caller identity");
+
+            // Quota enforcement
+            int existing = provisioningService.countTenantsByOwner(callerArn);
+            if (existing >= provisioningService.getMaxTenantsPerCaller())
+                return error(429, "QuotaExceededException",
+                    "Quota exceeded: maximum " + provisioningService.getMaxTenantsPerCaller()
+                    + " tenant(s) per caller, you have " + existing);
+
             if (dryRunService.isEnabled()) {
                 LOG.infof("DRY RUN: simulating provision for tenant %s", request.tenantId);
                 return Response.accepted(Map.of("tenantId", request.tenantId)).build();
@@ -71,7 +83,7 @@ public class TenantResource {
             String id = provisioningService.provision(request.tenantId, arch, pricingModel, k8sVersion,
                 Boolean.TRUE.equals(request.assignElasticIp),
                 request.diskSizeGb != null ? request.diskSizeGb : 20,
-                sshCidr);
+                sshCidr, callerArn);
             return Response.accepted(Map.of("tenantId", id)).build();
         } catch (IllegalArgumentException e) {
             return error(400, "InvalidParameterException", e.getMessage());
@@ -83,9 +95,12 @@ public class TenantResource {
 
     @GET
     @Path("/{id}")
-    public Response getTenant(@PathParam("id") String id) {
+    public Response getTenant(@PathParam("id") String id, @Context ContainerRequestContext ctx) {
         try {
+            String callerArn = (String) ctx.getProperty("callerArn");
             TenantItem item = provisioningService.getState(id);
+            if (callerArn != null && item.ownerArn() != null && !callerArn.equals(item.ownerArn()))
+                return error(404, "NotFoundException", "Tenant not found: " + id);
             return Response.ok(item).build();
         } catch (IllegalArgumentException e) {
             return error(404, "NotFoundException", e.getMessage());
@@ -97,8 +112,12 @@ public class TenantResource {
 
     @DELETE
     @Path("/{id}")
-    public Response deleteTenant(@PathParam("id") String id) {
+    public Response deleteTenant(@PathParam("id") String id, @Context ContainerRequestContext ctx) {
         try {
+            String callerArn = (String) ctx.getProperty("callerArn");
+            TenantItem item = provisioningService.getState(id);
+            if (callerArn != null && item.ownerArn() != null && !callerArn.equals(item.ownerArn()))
+                return error(404, "NotFoundException", "Tenant not found: " + id);
             provisioningService.deprovision(id);
             return Response.noContent().build();
         } catch (IllegalArgumentException e) {

@@ -14,5 +14,6 @@ public record TenantItem(
     String sshKeySecretArn,
     String updatedAt,
     String error,
-    String ec2PricingModel
+    String ec2PricingModel,
+    String ownerArn
 ) {}

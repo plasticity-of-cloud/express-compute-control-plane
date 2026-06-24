@@ -12,6 +12,10 @@ import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
+import software.amazon.awssdk.services.dynamodb.model.Select;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.CreateKeyPairRequest;
@@ -112,7 +116,7 @@ public class TenantProvisioningService {
     // Provision
     // -------------------------------------------------------------------------
 
-    public String provision(String tenantId, String arch, String ec2PricingModel, String k8sVersion, boolean assignElasticIp, int diskSizeGb, String sshCidr) {
+    public String provision(String tenantId, String arch, String ec2PricingModel, String k8sVersion, boolean assignElasticIp, int diskSizeGb, String sshCidr, String ownerArn) {
         LOG.infof("Provisioning tenant: %s (arch=%s, pricing=%s, k8s=%s)", tenantId, arch, ec2PricingModel, k8sVersion);
 
         String launchTemplateId = resolveLaunchTemplate(arch, ec2PricingModel);
@@ -190,6 +194,7 @@ public class TenantProvisioningService {
             item.put("sshKeySecretArn", AttributeValue.fromS(sshKeyArn));
             item.put("updatedAt", AttributeValue.fromS(now));
             item.put("ec2PricingModel", AttributeValue.fromS(ec2PricingModel));
+            if (ownerArn != null) item.put("ownerArn", AttributeValue.fromS(ownerArn));
             if (ec2Result.eipAllocationId() != null)
                 item.put("eipAllocationId", AttributeValue.fromS(ec2Result.eipAllocationId()));
             dynamoDb.putItem(PutItemRequest.builder().tableName(tenantsTable).item(item).build());
@@ -665,8 +670,31 @@ public class TenantProvisioningService {
             s(item, "sshKeySecretArn"),
             s(item, "updatedAt"),
             s(item, "error"),
-            s(item, "ec2PricingModel")
+            s(item, "ec2PricingModel"),
+            s(item, "ownerArn")
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Ownership & Quota
+    // -------------------------------------------------------------------------
+
+    @ConfigProperty(name = "eks-dx.quota.max-tenants-per-caller", defaultValue = "1")
+    int maxTenantsPerCaller;
+
+    public int getMaxTenantsPerCaller() { return maxTenantsPerCaller; }
+
+    public int countTenantsByOwner(String ownerArn) {
+        ScanResponse resp = dynamoDb.scan(ScanRequest.builder()
+            .tableName(tenantsTable)
+            .filterExpression("ownerArn = :owner AND #s <> :terminated")
+            .expressionAttributeNames(Map.of("#s", "state"))
+            .expressionAttributeValues(Map.of(
+                ":owner", AttributeValue.fromS(ownerArn),
+                ":terminated", AttributeValue.fromS("terminated")))
+            .select(Select.COUNT)
+            .build());
+        return resp.count();
     }
 
     private String s(Map<String, AttributeValue> item, String key) {
