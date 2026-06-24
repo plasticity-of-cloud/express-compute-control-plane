@@ -7,7 +7,7 @@ Automated provisioning of a kubeadm-based Kubernetes cluster per tenant, integra
 A Lambda function provisions a tenant cluster by:
 1. Generating per-tenant credentials (SSH key pair + SA signing key)
 2. Launching an EC2 instance via Launch Template
-3. The instance self-registers with eks-dx-lambda using a pre-provisioned signing key
+3. The instance self-registers with mgmt-service using a pre-provisioned signing key
 
 Initial infrastructure (Launch Template, IAM instance profile, VPC, Secrets Manager KMS key) is set up once via Terraform.
 
@@ -27,7 +27,7 @@ POST /tenants  (API Gateway → Lambda)
     │
     ├─ 3. iam:CreateRole("eks-dx-tenant-{tenantId}-instance-role")
     │      └─ inline policy: GetSecretValue on eks-dx/tenant/{tenantId}/*
-    │                         execute-api:Invoke on POST /clusters (eks-dx-lambda)
+    │                         execute-api:Invoke on POST /clusters (mgmt-service)
     │                         dynamodb:UpdateItem on eks-dx-tenants table
     │
     ├─ 4. ec2:RunInstances(LaunchTemplate, KeyName, IamInstanceProfile)
@@ -68,7 +68,7 @@ The `eks-dx-tenants` table tracks provisioning state. The EC2 instance writes pr
 | `pulling-key` | 20 | Fetching SA signing key from Secrets Manager |
 | `kubeadm-init` | 40 | `kubeadm init` running |
 | `kubeadm-done` | 70 | `kubeadm init` completed |
-| `registering` | 85 | Calling `POST /clusters` on eks-dx-lambda |
+| `registering` | 85 | Calling `POST /clusters` on mgmt-service |
 | `ready` | 100 | Cluster registered, pod identity live |
 | `failed` | — | Error stored in `error` field |
 
@@ -176,7 +176,7 @@ Provisioning tenant acme-staging...
   ✓ Instance booting
   ✓ Signing key fetched from Secrets Manager
   ⠸ kubeadm init running... [3m 12s]
-  ○ Registering cluster with eks-dx-lambda
+  ○ Registering cluster with mgmt-service
   ○ Ready
 
 Tenant ready. Public IP: 54.12.34.56
@@ -269,7 +269,7 @@ The provisioning endpoint (`POST /tenants`) executes 5–6 sequential AWS API ca
 
 - No always-on cost (~$30–50/month for a minimal Fargate task vs ~$0 for Lambda at CI/CD scale)
 - No infrastructure to manage (task definitions, ALB, scaling policy)
-- Consistent with the existing eks-dx-lambda architecture
+- Consistent with the existing mgmt-service architecture
 - SnapStart available if JVM mode is used; native image eliminates cold start entirely
 
 ECS Fargate would only be warranted for persistent connections (gRPC streaming) or operations exceeding Lambda's 15-minute timeout — neither applies here.
@@ -304,7 +304,7 @@ kubeadm init \
 
 ### Self-registration flow
 
-The instance calls `POST /clusters` on eks-dx-lambda using SigV4 signed by the instance profile. The instance profile role has `execute-api:Invoke` scoped to the registration endpoint only. No shared secret or bootstrap token is needed.
+The instance calls `POST /clusters` on mgmt-service using SigV4 signed by the instance profile. The instance profile role has `execute-api:Invoke` scoped to the registration endpoint only. No shared secret or bootstrap token is needed.
 
 In practice, use the `eks-dx` CLI (already handles SigV4) from the instance:
 
@@ -360,7 +360,7 @@ The role is deleted on tenant deprovisioning.
 ```
 DELETE /tenants/{id}
   1. ec2:TerminateInstances
-  2. DELETE /clusters/{tenantId}  (eks-dx-lambda — removes DynamoDB entry)
+  2. DELETE /clusters/{tenantId}  (mgmt-service — removes DynamoDB entry)
   3. secretsmanager:DeleteSecret eks-dx/tenant/{id}/signing-key
   4. secretsmanager:DeleteSecret eks-dx/tenant/{id}/ssh-key
   5. ec2:DeleteKeyPair eks-dx-tenant-{id}

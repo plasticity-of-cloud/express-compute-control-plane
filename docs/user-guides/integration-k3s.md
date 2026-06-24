@@ -8,7 +8,7 @@ End-to-end procedure to enable EKS Pod Identity on a k3s cluster.
 
 - k3s node running on EC2 (single-node or multi-node)
 - `eks-dx` CLI installed locally
-- AWS account with CDK stack deployed (see [DEPLOYMENT.md](../DEPLOYMENT.md))
+- AWS account with CDK stack deployed (see [deployment.md](deployment.md))
 - `ENDPOINT` env var set to your API Gateway URL
 
 ---
@@ -93,7 +93,7 @@ export AWS_SECRET_ACCESS_KEY=...
 
 ## 4. Create a pod identity association
 
-First, prepare your IAM role (see [IAM Role Setup](iam/IAM_ROLE_SETUP.md) for full details):
+First, prepare your IAM role (see [IAM Role Setup](iam/iam-role-setup.md) for full details):
 
 ```bash
 # Tag the role so EKS-DX can manage the trust policy automatically

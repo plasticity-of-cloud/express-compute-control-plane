@@ -40,7 +40,7 @@ Clusters and pod identity associations are registered via the `eks-dx` CLI. Tena
 cd infra && cdk deploy EksDXpressControlPlaneStack
 ```
 
-Requires SSM parameters written by the infrastructure stack first (see `docs/SSM_PARAMETER_CONTRACT.md`).
+Requires SSM parameters written by the infrastructure stack first (see `docs/design/ssm-parameter-contract.md`).
 
 ### Integration Tests
 
@@ -131,7 +131,7 @@ Infrastructure writes, Lambda reads at runtime:
 /eks-dx/network/security-group-id                # Security group
 ```
 
-See `docs/SSM_PARAMETER_CONTRACT.md` for full details.
+See `docs/design/ssm-parameter-contract.md` for full details.
 
 ### Environment Variables
 
@@ -151,12 +151,13 @@ See `docs/SSM_PARAMETER_CONTRACT.md` for full details.
 
 | Document | Purpose |
 |----------|---------|
-| `docs/SSM_PARAMETER_CONTRACT.md` | Interface between infra and Lambda |
-| `docs/TENANT_PROVISIONING_MIGRATION.md` | Migration from Terraform to Lambda |
-| `docs/TENANT_HIBERNATE_RESUME.md` | Instance lifecycle design |
-| `docs/KUBE_API_PROXY_ARCHITECTURE.md` | Kube-API proxy via Lambda/CloudFront |
-| `docs/UPGRADE_PLAN_Q3.33_JDK25.md` | Quarkus/Java upgrade plan |
-| `.agents/summary/index.md` | AI assistant knowledge base entry point |
+| `docs/architecture.md` | System overview and component diagrams |
+| `docs/design/ssm-parameter-contract.md` | Interface between CDK and Lambda |
+| `docs/design/tenant/provisioning.md` | Tenant provisioning orchestration |
+| `docs/design/tenant/hibernate-resume.md` | Instance lifecycle (stop/resume) |
+| `docs/design/iam/trust-policy-management.md` | Trust policy auto-management |
+| `docs/user-guides/deployment.md` | Deployment guide |
+| `docs/user-guides/integration-k3s.md` | k3s integration |
 
 ## License
 

@@ -180,7 +180,7 @@ kubectl apply -f eks-dx-pod-identity-webhook/k8s/
 
 ## 5. Create a pod identity association
 
-See [IAM Role Setup](user_guides/iam/IAM_ROLE_SETUP.md) for full details on preparing IAM roles.
+See [IAM Role Setup](user-guides/iam/iam-role-setup.md) for full details on preparing IAM roles.
 
 ```bash
 # Tag the role for automatic trust policy management
@@ -218,7 +218,7 @@ EKS-D-Xpress clusters are provisioned via `eks-dx create-tenant`, which:
 1. Launches an EC2 instance with kubeadm
 2. Pre-registers the SA signing key in Secrets Manager
 3. Runs `kubeadm init` with `--service-account-issuer https://<public-ip>`
-4. Auto-registers the cluster with eks-dx-lambda on first boot
+4. Auto-registers the cluster with mgmt-service on first boot
 
 No manual `eks-dx register-cluster` step is needed — the EC2 instance self-registers. After the tenant reaches `state: ready`:
 

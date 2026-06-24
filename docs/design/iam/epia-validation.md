@@ -70,10 +70,11 @@ role existence:
 ```json
 {
   "Effect": "Allow",
-  "Action": "iam:GetRole",
-  "Resource": "arn:aws:iam::*:role/eks-dx-pod-*"
+  "Action": ["iam:GetRole", "iam:ListRoleTags"],
+  "Resource": "arn:aws:iam::*:role/*"
 }
 ```
 
-This is scoped to the `eks-dx-pod-*` naming convention to follow
-least privilege.
+> **Note:** Since v2.1.0, the `eks-dx-pod-*` naming constraint is removed. Roles are scoped
+> via the `eks-dx-managed=true` resource tag and session tag conditions on the trust policy.
+> See [trust-policy-management.md](trust-policy-management.md) for details.

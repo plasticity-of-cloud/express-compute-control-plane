@@ -1,6 +1,9 @@
 # Roadmap — NodePool Controller Migration
 
-## Status: Planned
+## Status: Implemented (v2.0.0, June 2026)
+
+**Module:** `eks-dx-karpenter-support`
+**Key files:** `Ec2NodeClassReconciler.java`, `ValidationConditionService.java`
 
 ## Context
 

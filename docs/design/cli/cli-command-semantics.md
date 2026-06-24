@@ -168,7 +168,7 @@ public class EksDxCommand {}
 
 | Document | Location | Purpose |
 |----------|----------|---------|
-| CLI Reference | `docs/customer/cli/CLI_REFERENCE.md` | Complete command reference with examples |
+| CLI Reference | `docs/user-guides/cli/cli-reference.md` (planned) | Complete command reference with examples |
 | Migration Guide | `docs/customer/cli/MIGRATION_v2.2.md` | Old → new command mapping for existing users |
 | Man pages | Generated from picocli `--help` | Built into native binary |
 

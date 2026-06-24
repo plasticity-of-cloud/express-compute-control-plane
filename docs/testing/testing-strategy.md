@@ -156,7 +156,7 @@ For Lambda Function URL streaming specifically, the Quarkus `@QuarkusTest` mode 
 
 ### API Gateway Request Context Emulation
 
-The main gap with SAM local is the `requestContext` shape (IAM identity, authorizer). For unit/integration tests, inject a fake `AwsProxyRequest` directly:
+For unit/integration tests, inject a fake `AwsProxyRequest` directly:
 
 ```java
 // Build a fake API Gateway proxy request with IAM context
@@ -181,7 +181,7 @@ For full IAM context testing (role resolution, `eks-dx-role` tag), mock `iam:Lis
 |-----------|------|-------|
 | DynamoDB | `public.ecr.aws/aws-dynamodb-local/aws-dynamodb-local` via TestContainers | Already used |
 | Lambda runtime | `@QuarkusTest` (in-process) | Fastest, no Docker |
-| API Gateway emulation | SAM Local (`public.ecr.aws/sam/emulation-java21`) | Functional only, no IAM |
+| API Gateway emulation | CDK deploy to test account | Functional only, no IAM |
 | SSE/streaming | Quarkus RestEasy Reactive `Multi<T>` client | Works in `@QuarkusTest` |
 | AWS SDK mocking | Mockito `@InjectMock` | For unit tests |
 | EC2/IAM/STS | Localstack (optional) | Heavy, use only for rollback/provisioning tests |
@@ -194,4 +194,4 @@ For full IAM context testing (role resolution, `eks-dx-role` tag), mock `iam:Lis
 2. **Integration tests for DynamoDB key design** — credential exchange hot path
 3. **Unit tests for JWT validation** — security-critical
 4. **SSE stream tests** — verify terminal event emission and 8-minute timeout
-5. **E2E with SAM local** — lower priority, covered by layers 1-2
+5. **E2E with CDK deploy** — lower priority, covered by layers 1-2

@@ -98,7 +98,7 @@ Kubernetes supports multiple keys in the JWKS simultaneously, so tokens signed w
 
 **Secrets Manager path** — `eks-d-xpress/tenant/<tenantId>/sa-signing-key` (consistent with the existing SSH key path `eks-d-xpress/tenant/<id>/ssh-key`).
 
-**user-data change** — The first-boot script (documented in `docs/design/first-boot-script.md`) needs a step to:
+**user-data change** — The first-boot script (documented in `docs/design/tenant/first-boot-script.md`) needs a step to:
 ```bash
 aws secretsmanager get-secret-value \
   --secret-id "eks-d-xpress/tenant/${TENANT_ID}/sa-signing-key" \
@@ -215,5 +215,5 @@ The Secrets Manager paths (`eks-d-xpress/tenant/<id>/ca-key`, `eks-d-xpress/tena
 - [kubeadm Certificate Management — Custom Certificates](https://kubernetes.io/docs/tasks/administer-cluster/kubeadm/kubeadm-certs/#custom-certificates)
 - [kubeadm ClusterConfiguration v1beta4](https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta4/)
 - [Kubernetes SA token signing keys](https://kubernetes.io/docs/setup/best-practices/certificates/#all-certificates)
-- `docs/design/first-boot-script.md` — current user-data design
-- `docs/roadmap/security_hardening/SSM_ONLY_ACCESS.md` — related: removing public IP requirement
+- `docs/design/tenant/first-boot-script.md` — current user-data design
+- `docs/roadmap/security-hardening/ssm-only-access.md` — related: removing public IP requirement

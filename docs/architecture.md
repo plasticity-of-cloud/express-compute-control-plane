@@ -18,9 +18,12 @@ graph TB
 
     subgraph "AWS (Serverless)"
         APIGW["API Gateway<br/>(IAM auth on mgmt, open on /assets)"]
-        Lambda["eks-dx-lambda<br/>(Java 21, SnapStart)"]
+        CredLambda["credential-service<br/>(SnapStart, 512MB)"]
+        MgmtLambda["mgmt-service<br/>(JVM, 256MB)"]
+        TenantLambda["tenant-service<br/>(native arm64, 128MB)"]
         DDBClusters["DynamoDB<br/>eks-dx-clusters"]
         DDBAssoc["DynamoDB<br/>eks-dx-associations"]
+        DDBTenants["DynamoDB<br/>eks-dx-tenants"]
         STS["AWS STS<br/>(AssumeRole)"]
         CW["CloudWatch<br/>(Alarms + Logs)"]
     end
@@ -29,11 +32,13 @@ graph TB
     Agent -->|"2. POST /clusters/{name}/assets"| Proxy
     Proxy -->|"3. TokenReview"| KubeAPI
     Proxy -->|"4. Forward request"| APIGW
-    APIGW --> Lambda
-    Lambda -->|"5. JWKS validation"| DDBClusters
-    Lambda -->|"6. Association lookup"| DDBAssoc
-    Lambda -->|"7. AssumeRole"| STS
-    Lambda -->|"8. Credentials"| Proxy
+    APIGW --> CredLambda
+    APIGW --> MgmtLambda
+    APIGW --> TenantLambda
+    CredLambda -->|"5. JWKS validation"| DDBClusters
+    CredLambda -->|"6. Association lookup"| DDBAssoc
+    CredLambda -->|"7. AssumeRole"| STS
+    CredLambda -->|"8. Credentials"| Proxy
     Proxy -->|"9. Credentials"| Agent
     Agent -->|"10. Credentials"| Pod
 
@@ -43,7 +48,8 @@ graph TB
     CLI -->|"SigV4-signed requests"| APIGW
     CLI -->|"Read JWKS + OIDC"| KubeAPI
 
-    Lambda -.->|"Metrics + Logs"| CW
+    CredLambda -.->|"Metrics + Logs"| CW
+    MgmtLambda -.->|"Metrics + Logs"| CW
     APIGW -.->|"Access Logs"| CW
 ```
 
@@ -56,7 +62,7 @@ sequenceDiagram
     participant Proxy as eks-dx-auth-proxy
     participant K8s as K8s API Server
     participant GW as API Gateway
-    participant Lambda as eks-dx-lambda
+    participant Lambda as credential-service
     participant DDB as DynamoDB
     participant STS as AWS STS
 
@@ -77,7 +83,7 @@ sequenceDiagram
         Lambda->>DDB: GetItem(clusterName) → JWKS + issuer
         Lambda->>Lambda: jose4j JWT validation (sig, aud, iss, exp)
         Lambda->>DDB: GetItem(CLUSTER#name, ns#sa) → roleArn
-        Lambda->>STS: AssumeRole(roleArn, sessionTags)
+        Lambda->>STS: AssumeRole(roleArn, 6 EKS-compatible session tags,<br/>SourceIdentity, TransitiveTagKeys)
         STS-->>Lambda: Temporary credentials
     end
 
@@ -95,7 +101,7 @@ sequenceDiagram
     participant CLI as eks-dx CLI
     participant K8s as K8s API Server
     participant GW as API Gateway (IAM auth)
-    participant Lambda as eks-dx-lambda
+    participant Lambda as mgmt-service
     participant DDB as DynamoDB (eks-dx-clusters)
 
     User->>CLI: eks-dx register-cluster --name my-k3s --region us-east-1
@@ -122,7 +128,7 @@ sequenceDiagram
     participant User as Developer
     participant CLI as eks-dx CLI
     participant GW as API Gateway (IAM auth)
-    participant Lambda as eks-dx-lambda
+    participant Lambda as mgmt-service
     participant DDB as DynamoDB (eks-dx-associations)
 
     User->>CLI: eks-dx create-association<br/>--cluster-name my-k3s<br/>--namespace default --service-account my-app<br/>--role-arn arn:aws:iam::...:role/my-role
@@ -145,7 +151,7 @@ sequenceDiagram
     participant K8s as K8s API Server
     participant WH as eks-dx-pod-identity-webhook
     participant GW as API Gateway
-    participant Lambda as eks-dx-lambda
+    participant Lambda as mgmt-service
 
     K8s->>WH: AdmissionReview (CREATE Pod)<br/>namespace=default, sa=my-app
 
@@ -229,6 +235,18 @@ erDiagram
     }
 
     CLUSTERS ||--o{ ASSOCIATIONS : "has"
+
+    TENANTS {
+        string tenantId PK "Partition key"
+        string state "provisioning | ready | stopping | stopped | terminated"
+        string clusterName "Registered cluster name"
+        string instanceId "EC2 instance ID"
+        string publicIp "Elastic IP"
+        string arch "arm64 | x86_64"
+        string k8sVersion "Kubernetes version"
+        string createdAt "ISO 8601 timestamp"
+        string updatedAt "ISO 8601 timestamp"
+    }
 ```
 
 ## 8. Infrastructure Components
@@ -245,12 +263,15 @@ graph LR
     end
 
     subgraph "Lambda"
-        FN["eks-dx-lambda<br/>Java 21 · SnapStart · 512MB"]
+        FN1["credential-service<br/>Java 25 · SnapStart · 512MB"]
+        FN2["mgmt-service<br/>Java 25 · 256MB"]
+        FN3["tenant-service<br/>GraalVM native · arm64 · 128MB"]
     end
 
     subgraph "DynamoDB"
         T1["eks-dx-clusters<br/>PAY_PER_REQUEST · PITR"]
         T2["eks-dx-associations<br/>PAY_PER_REQUEST · PITR"]
+        T3["eks-dx-tenants<br/>PAY_PER_REQUEST · PITR"]
     end
 
     subgraph "CloudWatch"
@@ -261,16 +282,19 @@ graph LR
         LOG["API Access Logs<br/>30-day retention"]
     end
 
-    OPEN --> FN
-    IAM_C --> FN
-    IAM_CN --> FN
-    IAM_J --> FN
-    ASSOC --> FN
-    FN --> T1
-    FN --> T2
-    FN -.-> A1
-    FN -.-> A2
-    FN -.-> A3
+    OPEN --> FN1
+    IAM_C --> FN2
+    IAM_CN --> FN2
+    IAM_J --> FN2
+    ASSOC --> FN2
+    FN1 --> T1
+    FN1 --> T2
+    FN2 --> T1
+    FN2 --> T2
+    FN3 --> T3
+    FN1 -.-> A1
+    FN1 -.-> A2
+    FN1 -.-> A3
     T1 -.-> A4
 ```
 
@@ -279,26 +303,20 @@ graph LR
 ```mermaid
 graph TD
     EKS_DX["eks-dx"]
-    EKS_DX --> CONFIGURE["configure<br/>--endpoint --region"]
-    EKS_DX --> CREATE["create"]
-    EKS_DX --> DESCRIBE["describe"]
-    EKS_DX --> LIST["list"]
-    EKS_DX --> UPDATE["update"]
-    EKS_DX --> DELETE["delete"]
-
-    CREATE --> CC["cluster<br/>--name --region"]
-    CREATE --> CA["pod-identity-association<br/>--cluster-name --namespace<br/>--service-account --role-arn"]
-
-    DESCRIBE --> DC["cluster --name"]
-    DESCRIBE --> DA["pod-identity-association<br/>--cluster-name --association-id"]
-
-    LIST --> LC["clusters"]
-    LIST --> LA["pod-identity-associations<br/>--cluster-name"]
-
-    UPDATE --> UC["cluster --name --refresh-jwks"]
-
-    DELETE --> DEC["cluster --name"]
-    DELETE --> DEA["pod-identity-association<br/>--cluster-name --association-id"]
+    EKS_DX --> CONFIGURE["configure"]
+    EKS_DX --> RC["register-cluster"]
+    EKS_DX --> DRC["deregister-cluster"]
+    EKS_DX --> DC["describe-cluster"]
+    EKS_DX --> LC["list-clusters"]
+    EKS_DX --> UC["update-cluster"]
+    EKS_DX --> CA["create-association"]
+    EKS_DX --> DA["delete-association"]
+    EKS_DX --> DSA["describe-association"]
+    EKS_DX --> LA["list-associations"]
+    EKS_DX --> CT["create-tenant"]
+    EKS_DX --> DT["delete-tenant"]
+    EKS_DX --> ST["stop-tenant"]
+    EKS_DX --> RT["resume-tenant"]
 ```
 
 ## 10. Deployment Topology

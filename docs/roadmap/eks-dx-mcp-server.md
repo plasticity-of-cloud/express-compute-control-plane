@@ -130,10 +130,10 @@ The MCP server talks to the existing API Gateway endpoints using SigV4 signing �
 
 - MCP tools should require explicit confirmation for destructive operations (`delete_tenant`, `delete_cluster`) unless the agent is running in an automated pipeline mode
 - Tenant quotas per API caller should be enforced (e.g., max 3 concurrent tenants) to prevent runaway agents from accumulating resources
-- The existing role naming constraint (`eks-dx-pod-*`) and STS scoping remain the security boundary — agents cannot escalate beyond what their target IAM roles allow
+- Session tag conditions on trust policies remain the security boundary — agents cannot escalate beyond what their target IAM roles allow
 
 ## Related Documents
 
-- `docs/roadmap/security_hardening/CONTROL_PLANE_MANAGED_OIDC_JWKS.md` — pre-registration enables agents to get a kubeconfig before the cluster boots
-- `docs/roadmap/security_hardening/SSM_ONLY_ACCESS.md` — SSM-only access removes the need for agents to manage SSH keys
-- `docs/KUBE_API_PROXY_ARCHITECTURE.md` — proxy design that agents could use to interact with the cluster API via Lambda/CloudFront without public exposure
+- `docs/roadmap/security-hardening/control-plane-managed-oidc-jwks.md` — pre-registration enables agents to get a kubeconfig before the cluster boots
+- `docs/roadmap/security-hardening/ssm-only-access.md` — SSM-only access removes the need for agents to manage SSH keys
+- `archived (see eks-d-xpress-internal-docs)` — proxy design that agents could use to interact with the cluster API via Lambda/CloudFront without public exposure

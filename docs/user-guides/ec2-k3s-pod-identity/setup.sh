@@ -213,7 +213,7 @@ ${GREEN}════════════════════════
 
 $(if [[ -z "$EKS_DX_VERSION" ]]; then
   echo "  3. Deploy in-cluster components:"
-  echo "       See: docs/user_guides/ec2-k3s-pod-identity/README.md"
+  echo "       See: docs/user-guides/ec2-k3s-pod-identity/README.md"
   echo "       Or re-run with --version <version> to install from GHCR automatically."
 else
   echo "  In-cluster components (auth-proxy, webhook) installed from GHCR v${EKS_DX_VERSION}."

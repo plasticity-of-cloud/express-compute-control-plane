@@ -1,5 +1,18 @@
 # Development Guide
 
+## Conventions
+
+### File Naming
+
+- All documentation files use **lowercase with hyphens**: `tenant-provisioning.md`, `iam-role-setup.md`
+- Exceptions: `README.md`, `LICENSE.md`, `AGENTS.md` (GitHub conventions)
+- No `SCREAMING_CASE` filenames — convert `SOME_DOCUMENT.md` → `some-document.md`
+
+### CLI Command Style
+
+- Flat AWS CLI-style: `eks-dx <verb-noun>` (e.g., `eks-dx register-cluster`, `eks-dx create-association`)
+- No nested verb/noun commands (removed in v2.2.0)
+
 ## Prerequisites
 
 - Java 25 (GraalVM JDK for native builds)

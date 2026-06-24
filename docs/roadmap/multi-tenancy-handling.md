@@ -1,5 +1,7 @@
 # Multi-Tenancy Handling Roadmap
 
+## Status: Naming convention implemented (v1.0.0). Derived tenantId planned.
+
 ## Current State
 
 Each tenant gets a single IAM role + instance profile named:

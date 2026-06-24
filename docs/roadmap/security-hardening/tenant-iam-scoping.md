@@ -1,6 +1,6 @@
 # Security Hardening — Tenant IAM Scoping
 
-## Status: Planned
+## Status: Phase 1 complete (v2.0.0), Phases 2-4 planned
 
 ## Current State
 

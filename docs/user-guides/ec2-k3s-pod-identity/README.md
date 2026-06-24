@@ -117,7 +117,7 @@ eks-dx describe-cluster --name my-k3s
 
 ### 4. Create Pod Identity Associations
 
-For detailed IAM role setup instructions, see [IAM Role Setup](../iam/IAM_ROLE_SETUP.md).
+For detailed IAM role setup instructions, see [IAM Role Setup](../iam/iam-role-setup.md).
 
 ```bash
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)

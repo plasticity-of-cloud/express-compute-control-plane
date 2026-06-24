@@ -1,6 +1,9 @@
 # Roadmap — Karpenter EC2NodeClass Webhook Injection
 
-## Status: Planned
+## Status: Implemented (v2.0.0, June 2026)
+
+**Module:** `eks-dx-karpenter-support`
+**Key files:** `Ec2NodeClassWebhookResource.java`, `UserDataMergeService.java`
 
 ## Problem
 

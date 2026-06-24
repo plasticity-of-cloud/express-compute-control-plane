@@ -63,7 +63,7 @@ docs/                        # Architecture docs, SSM contract, migration plans
 
 **DynamoDB key design**: Associations use `PK=CLUSTER#<name>` / `SK=<namespace>#<serviceAccount>`. O(1) GetItem for credential exchange.
 
-**Role naming constraint**: STS AssumeRole scoped to `arn:aws:iam::*:role/eks-dx-pod-*`. Tenant IAM roles scoped to `eks-dx-tenant-*`.
+**Trust policy scoping**: STS AssumeRole uses session tag conditions (no role naming constraint). Tenant IAM roles scoped to `eks-dx-tenant-*`.
 
 **JWKS caching**: Per `clusterName|audience` in ConcurrentHashMap, 5-minute TTL, per Lambda instance.
 

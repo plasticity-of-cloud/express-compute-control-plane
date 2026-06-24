@@ -13,7 +13,7 @@ Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
   │
   ├─ 1. TokenReview (fast-fail — K8s API validates JWT signature + audience)
   │
-  └─ 2. Forward to eks-dx-lambda (via API Gateway)
+  └─ 2. Forward to credential-service Lambda (via API Gateway)
        │
        ├─ 3. JWKS validation (jose4j, DynamoDB-cached JWKS)
        ├─ 4. Association lookup (DynamoDB: CLUSTER#name / namespace#sa → roleArn)
@@ -39,7 +39,7 @@ Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
 
 ### Technology Stack
 
-- **Java 21** / **Quarkus 3.x**
+- **Java 25** / **Quarkus 3.35+**
 - **AWS SDK v2**: `sts`, `dynamodb`
 - **jose4j**: JWT/JWKS validation
 - **Fabric8 Kubernetes Client**: TokenReview
@@ -76,7 +76,7 @@ SSH key is stored in Secrets Manager at `eks-d-xpress/tenant/<id>/ssh-key` and s
 
 ## Configuration
 
-### eks-dx-lambda
+### credential-service (Lambda)
 
 | Property | Default | Description |
 |----------|---------|-------------|
