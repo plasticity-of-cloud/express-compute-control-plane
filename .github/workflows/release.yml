@@ -174,13 +174,22 @@ jobs:
           done
 
   # ── package-cdk ───────────────────────────────────────────────────────────
-  # Bundles the full CDK project with pre-built Lambda zips so consumers can
-  # run `cdk deploy` with custom context flags without rebuilding Lambda code.
+  # Pre-synthesizes the CDK stack so consumers only need `cdk deploy --app cdk.out`.
+  # No Maven, no Java required at deploy time.
   package-cdk:
     needs: [build, build-jvm-based-lambdas]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Install CDK CLI
+        run: npm install -g aws-cdk
 
       - name: Download arm64 build artifacts (contains tenant zip)
         uses: actions/download-artifact@v8
@@ -194,51 +203,61 @@ jobs:
           name: release-packages
           path: /tmp/release-packages
 
-      - name: Bundle CDK project with pre-built assets
+      - name: Pre-synthesize CDK stack
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # Place Lambda zips where CDK expects them (assets/ mode)
+          mkdir -p assets
+          cp /tmp/release-arm64/eks-dx-tenant-service-${VERSION}-arm64.zip assets/tenant-service.zip
+          cp /tmp/release-packages/eks-dx-credential-service-${VERSION}.zip assets/credential-service.zip
+          cp /tmp/release-packages/eks-dx-mgmt-service-${VERSION}.zip assets/mgmt-service.zip
+
+          # Compile CDK app and synthesize
+          mvn -B -N install -DskipTests
+          mvn -B -pl eks-dx-model install -DskipTests
+          mvn -B -pl infra compile
+          cd infra && cdk synth --no-staging
+        env:
+          AWS_REGION: us-east-1
+
+      - name: Bundle release tarball with cdk.out
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           BUNDLE="eks-d-xpress-control-plane-${VERSION}"
-          mkdir -p "${BUNDLE}/assets"
+          mkdir -p "${BUNDLE}"
 
-          # CDK source
+          # Pre-synthesized CDK output — deploy with `cdk deploy --app cdk.out`
+          cp -r infra/cdk.out "${BUNDLE}/cdk.out"
+
+          # Also include assets + source for users who want to customize
+          cp -r assets "${BUNDLE}/assets"
           cp -r infra "${BUNDLE}/infra"
 
-          # Pre-built Lambda zips
-          cp /tmp/release-arm64/eks-dx-tenant-service-${VERSION}-arm64.zip "${BUNDLE}/assets/tenant-service.zip"
-          cp /tmp/release-packages/eks-dx-credential-service-${VERSION}.zip "${BUNDLE}/assets/credential-service.zip"
-          cp /tmp/release-packages/eks-dx-mgmt-service-${VERSION}.zip "${BUNDLE}/assets/mgmt-service.zip"
-
-          # Deploy instructions
           cat > "${BUNDLE}/README.md" <<'EOF'
-          # EKS-DX Control Plane — CDK Deployment
+# EKS-DX Control Plane — CDK Deployment
 
-          ## Prerequisites
-          - Java 25, Maven 3.9+
-          - AWS CDK CLI (`npm install -g aws-cdk`)
-          - AWS credentials with appropriate permissions
+## Quick Deploy (no build required)
 
-          ## Deploy
+```bash
+cd eks-d-xpress-control-plane-<version>
+cdk deploy --app cdk.out EksDXpressControlPlaneStack
+```
 
-          ```bash
-          cd infra
-          cdk deploy EksDXpressControlPlaneStack \
-            --context assetsDir=../assets
-          ```
+No Java, no Maven needed — the stack is pre-synthesized.
 
-          ## Context Flags
+## Custom Deploy (with modifications)
 
-          | Flag | Value | Effect |
-          |------|-------|--------|
-          | `assetsDir` | path | Directory containing pre-built Lambda zips (default: `../assets`) |
-          | `nativeArch` | `x86` | Deploy tenant-service as x86_64 native binary |
-          | `jvmTenant` | `true` | Deploy tenant-service as JVM (Java 25 runtime) |
-          | (neither) | — | Deploy as arm64 native binary (production default) |
+If you need to change CDK context flags or modify the stack:
 
-          ## Customizing
+```bash
+# Requires: Java 25, Maven 3.9+, CDK CLI
+cd infra
+cdk deploy EksDXpressControlPlaneStack --context jvmTenant=true
+```
 
-          Modify `infra/src/` CDK stack code, then re-run `cdk deploy`.
-          No need to rebuild Lambda code — pre-built zips are in `assets/`.
-          EOF
+Pre-built Lambda zips are in `assets/` — no need to rebuild Lambda code.
+EOF
 
           tar czf "eks-d-xpress-control-plane-${VERSION}.tar.gz" "${BUNDLE}"
 
