@@ -213,11 +213,11 @@ jobs:
           cp /tmp/release-packages/eks-dx-credential-service-${VERSION}.zip assets/credential-service.zip
           cp /tmp/release-packages/eks-dx-mgmt-service-${VERSION}.zip assets/mgmt-service.zip
 
-          # Compile CDK app and synthesize
+          # Compile CDK app and synthesize (assets are staged into cdk.out/)
           mvn -B -N install -DskipTests
           mvn -B -pl eks-dx-model install -DskipTests
           mvn -B -pl infra compile
-          cd infra && cdk synth --no-staging
+          cd infra && cdk synth
         env:
           AWS_REGION: us-east-1
 
