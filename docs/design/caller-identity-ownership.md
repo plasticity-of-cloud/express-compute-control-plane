@@ -294,3 +294,46 @@ The permission set's inline policy is scoped to the specific API Gateway:
 ```
 
 This means EksDXpressUsers group members can ONLY call the EKS-DX API — no other AWS actions are granted by this permission set.
+
+## Machine Identities (EC2, CI/CD)
+
+Machine callers (tenant EC2 instances, GitHub Actions, Jenkins) do NOT use Identity Center. They use direct IAM roles with `execute-api:Invoke` granted via standard IAM policies.
+
+### Tenant EC2 instance (self-registration)
+
+The instance profile role (`eks-d-xpress-tenant-{id}-instance-role`) gets a scoped policy from CDK:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "execute-api:Invoke",
+  "Resource": "arn:aws:execute-api:{region}:{account}:{api-id}/*/POST/clusters/{tenantId}"
+}
+```
+
+This allows the instance to register itself (`POST /clusters/{tenantId}`) but nothing else.
+
+### CI/CD roles (GitHub Actions, Jenkins)
+
+Grant `execute-api:Invoke` on the API directly in the role's IAM policy. No Identity Center involvement.
+
+### Summary of access paths
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      API Gateway (IAM auth)                   │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Human (CLI)           Machine (EC2 / CI/CD)                 │
+│  ─────────────         ──────────────────────                │
+│  Identity Center       Direct IAM role policy                │
+│  → EksDXpressUsers     → execute-api:Invoke                  │
+│  → Permission Set        (scoped per use case)               │
+│  → SigV4 credentials                                         │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│                      Lambda (ownership + quota)               │
+│  callerArn extracted from requestContext.identity.userArn     │
+│  Both paths produce a valid callerArn for ownership tracking  │
+└──────────────────────────────────────────────────────────────┘
+```
