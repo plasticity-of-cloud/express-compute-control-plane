@@ -134,6 +134,6 @@ The MCP server talks to the existing API Gateway endpoints using SigV4 signing �
 
 ## Related Documents
 
-- `docs/roadmap/security_hardening/CONTROL_PLANE_MANAGED_OIDC_JWKS.md` — pre-registration enables agents to get a kubeconfig before the cluster boots
-- `docs/roadmap/security_hardening/SSM_ONLY_ACCESS.md` — SSM-only access removes the need for agents to manage SSH keys
-- `docs/KUBE_API_PROXY_ARCHITECTURE.md` — proxy design that agents could use to interact with the cluster API via Lambda/CloudFront without public exposure
+- `docs/roadmap/security_hardening/control-plane-managed-oidc-jwks.md` — pre-registration enables agents to get a kubeconfig before the cluster boots
+- `docs/roadmap/security_hardening/ssm-only-access.md` — SSM-only access removes the need for agents to manage SSH keys
+- `archived (see eks-d-xpress-internal-docs)` — proxy design that agents could use to interact with the cluster API via Lambda/CloudFront without public exposure

@@ -216,4 +216,4 @@ The Secrets Manager paths (`eks-d-xpress/tenant/<id>/ca-key`, `eks-d-xpress/tena
 - [kubeadm ClusterConfiguration v1beta4](https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta4/)
 - [Kubernetes SA token signing keys](https://kubernetes.io/docs/setup/best-practices/certificates/#all-certificates)
 - `docs/design/tenant/first-boot-script.md` — current user-data design
-- `docs/roadmap/security_hardening/SSM_ONLY_ACCESS.md` — related: removing public IP requirement
+- `docs/roadmap/security_hardening/ssm-only-access.md` — related: removing public IP requirement
