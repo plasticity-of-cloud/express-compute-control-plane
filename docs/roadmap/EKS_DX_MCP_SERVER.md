@@ -20,11 +20,11 @@ Exposing eks-dx as an [MCP (Model Context Protocol)](https://modelcontextprotoco
 The analogy to Git branches is direct:
 
 ```
-git checkout -b feature/my-work     →  eks-dx create tenant
-                                        eks-dx create pod-identity-association
+git checkout -b feature/my-work     →  eks-dx create-tenant
+                                        eks-dx create-association
                                         <agent works in isolation>
 git push && open PR                 →  agent validates workloads, runs tests
-git merge && delete branch          →  eks-dx delete tenant
+git merge && delete branch          →  eks-dx delete-tenant
 ```
 
 Each agent task gets its own cluster. Clusters are cheap (single EC2 instance), isolated (dedicated VPC subnets, IAM role, SG), and disposable. Agents never share state or credentials across tasks.

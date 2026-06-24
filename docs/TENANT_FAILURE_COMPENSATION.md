@@ -69,7 +69,7 @@ During the TTL window, the admin can:
 
 ```bash
 # 1. Check what failed
-eks-dx describe tenant my-tenant
+eks-dx describe-tenant my-tenant
 # → state: failed, error: "...", ttl: 2026-05-27T01:00:00Z
 
 # 2. SSM into the instance (if it launched but failed to bootstrap)
@@ -85,8 +85,8 @@ aws ec2 describe-subnets --filters "Name=tag:eks-dx-tenant,Values=my-tenant"
 aws iam get-role --role-name eks-dx-tenant-my-tenant-instance-role
 
 # 5. Manual fix and retry
-eks-dx delete tenant my-tenant    # explicit cleanup
-eks-dx create tenant my-tenant    # retry
+eks-dx delete-tenant my-tenant    # explicit cleanup
+eks-dx create-tenant my-tenant    # retry
 
 # 6. Or just wait — auto-cleanup after 24h
 ```

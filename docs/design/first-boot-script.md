@@ -20,7 +20,7 @@ call per step.
 | `pulling-key` | 20 | Fetching SA signing key from Secrets Manager (full variant only) |
 | `kubeadm-init` | 40 | `kubeadm init` running |
 | `kubeadm-done` | 70 | `kubeadm init` completed |
-| `registering` | 85 | Calling `eks-dx create cluster` |
+| `registering` | 85 | Calling `eks-dx register-cluster` |
 | `ready` | 100 | Cluster registered, in-cluster components installed |
 | `failed` | — | Error stored in `error` field |
 
@@ -130,7 +130,7 @@ update_progress "registering" "Registering cluster with eks-dx" 85
 kubectl get --raw /openid/v1/jwks \
   --kubeconfig /etc/kubernetes/admin.conf > /tmp/jwks.json
 
-eks-dx create cluster "${TENANT_ID}" \
+eks-dx register-cluster "${TENANT_ID}" \
   --issuer "https://${PUBLIC_IP}" \
   --jwks-file /tmp/jwks.json
 

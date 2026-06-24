@@ -16,41 +16,41 @@ Mirrors `eksctl` / `aws eks` verb-resource pattern.
 
 ```bash
 # Register — auto-reads JWKS + issuer from current kubeconfig context
-eks-dx create cluster --name my-k3s --region us-east-1
+eks-dx register-cluster --name my-k3s --region us-east-1
 
 # Describe
-eks-dx describe cluster --name my-k3s
+eks-dx describe-cluster --name my-k3s
 
 # List
-eks-dx list clusters
+eks-dx list-clusters
 
 # Refresh JWKS (after SA key rotation)
-eks-dx update cluster --name my-k3s --refresh-jwks
+eks-dx update-cluster --name my-k3s --refresh-jwks
 
 # Deregister
-eks-dx delete cluster --name my-k3s
+eks-dx deregister-cluster --name my-k3s
 ```
 
 ### Pod Identity Associations
 
 ```bash
 # Create — same flags as aws eks create-pod-identity-association
-eks-dx create pod-identity-association \
+eks-dx create-association \
   --cluster-name my-k3s \
   --namespace default \
   --service-account my-app \
   --role-arn arn:aws:iam::123456789012:role/my-app
 
 # List
-eks-dx list pod-identity-associations --cluster-name my-k3s
+eks-dx list-associations --cluster-name my-k3s
 
 # Describe
-eks-dx describe pod-identity-association \
+eks-dx describe-association \
   --cluster-name my-k3s \
   --association-id assoc-abc123
 
 # Delete
-eks-dx delete pod-identity-association \
+eks-dx delete-association \
   --cluster-name my-k3s \
   --association-id assoc-abc123
 ```

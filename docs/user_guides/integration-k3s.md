@@ -48,7 +48,7 @@ From your local machine (with `~/.kube/config` pointing at the k3s cluster):
 eks-dx configure --endpoint $ENDPOINT --region us-east-1
 
 # Register — auto-discovers issuer + JWKS from the kube-apiserver
-eks-dx create cluster --name my-k3s
+eks-dx register-cluster --name my-k3s
 ```
 
 Or manually if auto-discovery doesn't work (e.g. kube-apiserver not reachable from your machine):
@@ -58,7 +58,7 @@ Or manually if auto-discovery doesn't work (e.g. kube-apiserver not reachable fr
 kubectl get --raw /openid/v1/jwks > /tmp/jwks.json
 
 # From your machine
-eks-dx create cluster --name my-k3s \
+eks-dx register-cluster --name my-k3s \
   --issuer https://<PUBLIC_IP> \
   --jwks-file /tmp/jwks.json
 ```
@@ -66,7 +66,7 @@ eks-dx create cluster --name my-k3s \
 Verify:
 
 ```bash
-eks-dx get cluster my-k3s
+eks-dx describe-cluster my-k3s
 ```
 
 ---
@@ -101,7 +101,7 @@ aws iam tag-role --role-name my-role --tags Key=eks-dx-managed,Value=true
 Then create the association:
 
 ```bash
-eks-dx create pod-identity-association \
+eks-dx create-association \
   --cluster-name my-k3s \
   --namespace my-app \
   --service-account my-sa \
@@ -150,6 +150,6 @@ kubectl logs aws-test -n my-app
 
 **JWT validation fails:** the issuer in DynamoDB doesn't match the `iss` claim in the SA token. Re-register with the correct `--issuer`.
 
-**No association found:** the pod's `namespace/serviceAccount` doesn't match any registered association. Run `eks-dx list associations --cluster my-k3s`.
+**No association found:** the pod's `namespace/serviceAccount` doesn't match any registered association. Run `eks-dx list-associations --cluster my-k3s`.
 
 **Proxy token rejected:** the proxy's projected SA token audience doesn't match `eks-dx.codriverlabs.ai`. Check the volume spec in the proxy deployment.

@@ -203,10 +203,10 @@ ${GREEN}════════════════════════
   1. Register the cluster:
        export KUBECONFIG=$KUBECONFIG_PATH
        eks-dx configure --endpoint ${EKS_DX_ENDPOINT} --region ${REGION}
-       eks-dx create cluster --name ${CLUSTER_NAME} --region ${REGION}
+       eks-dx register-cluster --name ${CLUSTER_NAME} --region ${REGION}
 
   2. Create associations:
-       eks-dx create pod-identity-association \\
+       eks-dx create-association \\
          --cluster-name ${CLUSTER_NAME} \\
          --namespace default --service-account my-app \\
          --role-arn arn:aws:iam::${ACCOUNT_ID}:role/eks-dx-pod-my-app

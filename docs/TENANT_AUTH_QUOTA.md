@@ -150,7 +150,7 @@ Engineer's DCV workstation
     ├─ 2. eks-dx configure
     │     → sets endpoint, region in ~/.eks-dx/config
     │
-    ├─ 3. eks-dx create tenant my-dev --arch arm64 --ec2-pricing-model spot
+    ├─ 3. eks-dx create-tenant my-dev --arch arm64 --ec2-pricing-model spot
     │     │
     │     └─► CLI signs request with SigV4 (uses AWS credentials from env/profile)
     │         │
@@ -164,7 +164,7 @@ Engineer's DCV workstation
     │             └─ If over quota → 429 QuotaExceededException
     │
     └─ 4. Engineer gets their single tenant
-         eks-dx describe tenant my-dev
+         eks-dx describe-tenant my-dev
          ssh -i ~/.eks-dx/keys/my-dev.pem ec2-user@<ip>
 ```
 
@@ -183,7 +183,7 @@ jobs:
 
       - name: Create ephemeral tenant
         run: |
-          eks-dx create tenant ci-${{ github.run_id }} \
+          eks-dx create-tenant ci-${{ github.run_id }} \
             --arch arm64 --ec2-pricing-model spot
 
       - name: Run tests against tenant cluster
@@ -194,7 +194,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: eks-dx delete tenant ci-${{ github.run_id }}
+        run: eks-dx delete-tenant ci-${{ github.run_id }}
 ```
 
 ## API Response on Quota Exceeded

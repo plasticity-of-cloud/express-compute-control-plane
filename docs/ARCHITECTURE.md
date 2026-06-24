@@ -98,7 +98,7 @@ sequenceDiagram
     participant Lambda as eks-dx-lambda
     participant DDB as DynamoDB (eks-dx-clusters)
 
-    User->>CLI: eks-dx create cluster --name my-k3s --region us-east-1
+    User->>CLI: eks-dx register-cluster --name my-k3s --region us-east-1
     CLI->>K8s: GET /openid/v1/jwks
     K8s-->>CLI: JWKS JSON (public keys)
     CLI->>K8s: GET /.well-known/openid-configuration
@@ -125,7 +125,7 @@ sequenceDiagram
     participant Lambda as eks-dx-lambda
     participant DDB as DynamoDB (eks-dx-associations)
 
-    User->>CLI: eks-dx create pod-identity-association<br/>--cluster-name my-k3s<br/>--namespace default --service-account my-app<br/>--role-arn arn:aws:iam::...:role/my-role
+    User->>CLI: eks-dx create-association<br/>--cluster-name my-k3s<br/>--namespace default --service-account my-app<br/>--role-arn arn:aws:iam::...:role/my-role
 
     CLI->>GW: POST /clusters/my-k3s/pod-identity-associations<br/>(SigV4 signed)
     GW->>Lambda: Invoke

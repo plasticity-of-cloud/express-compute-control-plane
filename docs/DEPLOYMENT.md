@@ -130,13 +130,13 @@ The cluster's OIDC issuer and JWKS must be registered once. The CLI auto-discove
 eks-dx configure --endpoint $ENDPOINT --region us-east-1
 
 # Auto-discovers issuer + JWKS from /.well-known/openid-configuration
-eks-dx create cluster --name my-cluster
+eks-dx register-cluster --name my-cluster
 ```
 
 Or explicitly:
 
 ```bash
-eks-dx create cluster --name my-cluster \
+eks-dx register-cluster --name my-cluster \
   --issuer https://<public-ip-or-domain> \
   --jwks-file /tmp/jwks.json
 ```
@@ -186,7 +186,7 @@ See [IAM Role Setup](customer/iam/IAM_ROLE_SETUP.md) for full details on prepari
 # Tag the role for automatic trust policy management
 aws iam tag-role --role-name my-role --tags Key=eks-dx-managed,Value=true
 
-eks-dx create pod-identity-association \
+eks-dx create-association \
   --cluster-name my-cluster \
   --namespace my-app \
   --service-account my-sa \
@@ -205,7 +205,7 @@ k3s exposes the OIDC discovery endpoint on the kube-apiserver. The issuer is typ
 # On the k3s node — extract JWKS
 kubectl get --raw /openid/v1/jwks > /tmp/jwks.json
 
-eks-dx create cluster --name my-k3s \
+eks-dx register-cluster --name my-k3s \
   --issuer https://<node-public-ip> \
   --jwks-file /tmp/jwks.json
 ```
@@ -214,17 +214,17 @@ The auth-proxy needs to reach the kube-apiserver for TokenReview. In k3s this wo
 
 ### EKS-D-Xpress
 
-EKS-D-Xpress clusters are provisioned via `eks-dx create tenant`, which:
+EKS-D-Xpress clusters are provisioned via `eks-dx create-tenant`, which:
 1. Launches an EC2 instance with kubeadm
 2. Pre-registers the SA signing key in Secrets Manager
 3. Runs `kubeadm init` with `--service-account-issuer https://<public-ip>`
 4. Auto-registers the cluster with eks-dx-lambda on first boot
 
-No manual `eks-dx create cluster` step is needed — the EC2 instance self-registers. After the tenant reaches `state: ready`:
+No manual `eks-dx register-cluster` step is needed — the EC2 instance self-registers. After the tenant reaches `state: ready`:
 
 ```bash
 # Watch provisioning progress
-eks-dx create tenant acme-staging --wait
+eks-dx create-tenant acme-staging --wait
 
 # Install in-cluster components on the new cluster
 KUBECONFIG=/path/to/acme-staging.kubeconfig \
@@ -258,5 +258,5 @@ cd infra && cdk destroy EksDXpressControlPlaneStack
 
 For tenant clusters:
 ```bash
-eks-dx delete tenant acme-staging   # terminates EC2, removes secrets, deregisters cluster
+eks-dx delete-tenant acme-staging   # terminates EC2, removes secrets, deregisters cluster
 ```

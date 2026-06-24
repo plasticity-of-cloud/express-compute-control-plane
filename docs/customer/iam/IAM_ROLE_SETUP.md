@@ -5,7 +5,7 @@ This guide explains how to configure IAM roles so your Kubernetes workloads can 
 ## Prerequisites
 
 - An EKS-DX control plane deployed in your account
-- A registered cluster (`eks-dx create cluster`)
+- A registered cluster (`eks-dx register-cluster`)
 - The `eks-dx` CLI installed
 
 ## Step 1: Create an IAM Role
@@ -37,7 +37,7 @@ aws iam tag-role \
 ## Step 3: Create the Pod Identity Association
 
 ```bash
-eks-dx create pod-identity-association \
+eks-dx create-association \
   --cluster-name my-cluster \
   --namespace default \
   --service-account my-app-sa \
@@ -107,7 +107,7 @@ The EKS-DX pod identity webhook automatically injects the credential environment
 When you delete the association, EKS-DX removes the trust statement from the role:
 
 ```bash
-eks-dx delete pod-identity-association \
+eks-dx delete-association \
   --cluster-name my-cluster \
   --association-id assoc-a1b2c3d4e5f6
 ```

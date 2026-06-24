@@ -47,7 +47,7 @@ POST /tenants  (API Gateway → Lambda)
     │      DynamoDB.update({ state: "kubeadm-done", progress: 70 })
     ├─ 5. Derive public JWKS from sa.pub
     │      DynamoDB.update({ state: "registering",  progress: 85 })
-    └─ 6. eks-dx create cluster {tenantId} --issuer ... --jwks-file ...
+    └─ 6. eks-dx register-cluster {tenantId} --issuer ... --jwks-file ...
            DynamoDB.update({ state: "ready", progress: 100, publicIp })
 
 GET /tenants/{id}  (API Gateway → Lambda)
@@ -164,12 +164,12 @@ The streaming Lambda runs as a GraalVM native image (`provided.al2023`), which u
 
 Free tier: 400,000 GB-seconds/month, 1M requests/month. At 128MB × 180s = 22.5 GB-seconds per invocation, the free tier covers ~17,777 provisions/month. CI/CD workloads will not exit the free tier.
 
-## CLI Integration (`eks-dx create tenant --wait`)
+## CLI Integration (`eks-dx create-tenant --wait`)
 
 The `eks-dx` CLI (PicoCLI) connects to the SSE stream endpoint and renders progress in the terminal.
 
 ```
-$ eks-dx create tenant acme-staging --wait
+$ eks-dx create-tenant acme-staging --wait
 
 Provisioning tenant acme-staging...
   ✓ EC2 instance launched (i-0abc1234567890)
@@ -219,7 +219,7 @@ public class CreateTenantCommand implements Runnable {
 
 ## CI/CD Integration
 
-CI/CD pipelines use `eks-dx create tenant --wait --output json`. The CLI handles all polling internally — no custom loop needed in pipeline YAML.
+CI/CD pipelines use `eks-dx create-tenant --wait --output json`. The CLI handles all polling internally — no custom loop needed in pipeline YAML.
 
 ```yaml
 # GitHub Actions
@@ -230,7 +230,7 @@ CI/CD pipelines use `eks-dx create tenant --wait --output json`. The CLI handles
 
 - name: Provision tenant
   run: |
-    RESULT=$(eks-dx create tenant acme-${{ github.run_id }} --wait --output json)
+    RESULT=$(eks-dx create-tenant acme-${{ github.run_id }} --wait --output json)
     echo "PUBLIC_IP=$(echo $RESULT | jq -r .publicIp)" >> $GITHUB_ENV
 ```
 
@@ -309,7 +309,7 @@ The instance calls `POST /clusters` on eks-dx-lambda using SigV4 signed by the i
 In practice, use the `eks-dx` CLI (already handles SigV4) from the instance:
 
 ```bash
-eks-dx create cluster ${TENANT_ID} \
+eks-dx register-cluster ${TENANT_ID} \
   --issuer "https://${PUBLIC_IP}" \
   --jwks-file /tmp/jwks.json
 ```

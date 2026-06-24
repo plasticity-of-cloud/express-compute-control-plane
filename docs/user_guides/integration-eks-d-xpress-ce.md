@@ -6,7 +6,7 @@ registered with eks-dx. There is no pre-provisioned signing key in Secrets Manag
 
 > **Note:** This means the SA signing key is not backed up. If the instance is terminated
 > and reprovisioned, a new key is generated and the cluster must be re-registered
-> (`eks-dx create cluster` again with the new JWKS). For production use with key persistence,
+> (`eks-dx register-cluster` again with the new JWKS). For production use with key persistence,
 > see [integration-eks-d-xpress.md](integration-eks-d-xpress.md).
 
 ## Prerequisites
@@ -24,10 +24,10 @@ registered with eks-dx. There is no pre-provisioned signing key in Secrets Manag
 eks-dx configure --endpoint $ENDPOINT --region us-east-1
 
 # Provision and wait for completion (~5-8 minutes)
-eks-dx create tenant acme-staging --wait
+eks-dx create-tenant acme-staging --wait
 
 # With JSON output for CI/CD
-RESULT=$(eks-dx create tenant acme-staging --wait --output json)
+RESULT=$(eks-dx create-tenant acme-staging --wait --output json)
 PUBLIC_IP=$(echo $RESULT | jq -r .publicIp)
 ```
 
@@ -54,7 +54,7 @@ The AMI's first-boot script runs as `ec2-user`:
 1. Runs `kubeadm init --service-account-issuer https://{publicIp}`
    — kubeadm generates its own SA signing key at `/etc/kubernetes/pki/sa.key`
 2. Derives JWKS from `/etc/kubernetes/pki/sa.pub`
-3. Calls `eks-dx create cluster {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json`
+3. Calls `eks-dx register-cluster {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json`
    — authenticated via the instance profile IAM role, scoped to `POST /clusters/{tenantId}` only
 4. Installs `eks-dx-auth-proxy` and `eks-dx-pod-identity-webhook` via Helm (images pre-baked in AMI)
 5. Updates DynamoDB state to `ready`
@@ -94,7 +94,7 @@ aws iam tag-role --role-name my-role --tags Key=eks-dx-managed,Value=true
 Then create the association:
 
 ```bash
-eks-dx create pod-identity-association \
+eks-dx create-association \
   --cluster-name acme-staging \
   --namespace my-app \
   --service-account my-sa \
@@ -124,7 +124,7 @@ kubectl --kubeconfig acme-staging.kubeconfig logs aws-test -n my-app
 ## 5. Deprovision
 
 ```bash
-eks-dx delete tenant acme-staging
+eks-dx delete-tenant acme-staging
 ```
 
 This terminates the EC2 instance, deletes both Secrets Manager secrets, removes the cluster
@@ -151,4 +151,4 @@ registration from DynamoDB, deletes the per-tenant IAM role, and removes the EC2
 | Key backup | None | None | Secrets Manager |
 | Re-provisioning | Manual re-register | New key, re-register | Same key, transparent |
 | In-cluster components | Manual Helm install | Pre-baked in AMI | Pre-baked in AMI |
-| Deprovisioning | Manual | `eks-dx delete tenant` | `eks-dx delete tenant` |
+| Deprovisioning | Manual | `eks-dx delete-tenant` | `eks-dx delete-tenant` |

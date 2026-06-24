@@ -346,7 +346,7 @@ aws sts get-caller-identity
 # and in IAM policy conditions as aws:PrincipalTag/eks-dx-role
 
 # Test provisioning:
-eks-dx create tenant my-dev --arch arm64
+eks-dx create-tenant my-dev --arch arm64
 ```
 
 ## Migration from TENANT_AUTH_QUOTA.md

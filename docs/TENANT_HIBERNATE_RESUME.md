@@ -40,7 +40,7 @@ Running Instance (m6g.large, 8GB RAM)
 ### On-demand (tenant service API)
 - Tenant idle detection → hibernate (saves compute cost)
 - Tenant activity / API call → resume
-- CLI: `eks-dx hibernate my-tenant` / `eks-dx resume my-tenant`
+- CLI: `eks-dx stop-tenant my-tenant` / `eks-dx resume-tenant my-tenant`
 
 ## Implementation
 
@@ -148,5 +148,5 @@ EventBridge rule → every 15 min → check CloudWatch metric (API calls = 0 for
     → invoke tenant Lambda → hibernate
 ```
 
-Resume is always explicit: `eks-dx resume my-tenant` (CLI or API).
+Resume is always explicit: `eks-dx resume-tenant my-tenant` (CLI or API).
 The auth-proxy runs inside the tenant cluster, so it cannot trigger resume when the instance is stopped.

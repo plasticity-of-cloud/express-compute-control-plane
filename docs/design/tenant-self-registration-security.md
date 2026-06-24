@@ -74,7 +74,7 @@ EC2 instance boots (IAM role: eks-dx-tenant-{tenantId}-instance-role)
 2. kubeadm init --service-account-signing-key-file sa.key \
                 --service-account-issuer https://{publicIp}
 3. Derive JWKS from sa.pub
-4. eks-dx create cluster {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json
+4. eks-dx register-cluster {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json
    → POST /clusters/{tenantId}  (SigV4, signed by instance profile)
    → IAM allows this call only for this tenantId
 5. Install eks-dx-auth-proxy + webhook (pre-baked in AMI)
