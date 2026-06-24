@@ -8,7 +8,7 @@ End-to-end procedure to enable EKS Pod Identity on a k3s cluster.
 
 - k3s node running on EC2 (single-node or multi-node)
 - `eks-dx` CLI installed locally
-- AWS account with CDK stack deployed (see [DEPLOYMENT.md](../DEPLOYMENT.md))
+- AWS account with CDK stack deployed (see [DEPLOYMENT.md](DEPLOYMENT.md))
 - `ENDPOINT` env var set to your API Gateway URL
 
 ---

@@ -6,7 +6,7 @@ This guide covers what happens automatically and what you need to do after the c
 
 ## Prerequisites
 
-- AWS account with CDK stack deployed (see [DEPLOYMENT.md](../DEPLOYMENT.md))
+- AWS account with CDK stack deployed (see [DEPLOYMENT.md](DEPLOYMENT.md))
 - Terraform infra applied (VPC, subnets, Launch Template, AMI — see `infra/`)
 - `eks-dx` CLI installed
 - `ENDPOINT` env var set to your API Gateway URL
