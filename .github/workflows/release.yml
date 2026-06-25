@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.0.3)'
+        required: true
 
 permissions:
   contents: write
@@ -81,7 +86,7 @@ jobs:
           cp eks-dx-tenant-service/target/function.zip eks-dx-tenant-service-${VERSION}-${{ matrix.arch }}.zip
 
       - name: Upload arch artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.arch }}
           retention-days: 1
@@ -140,7 +145,7 @@ jobs:
           cp eks-dx-karpenter-support/target/helm/kubernetes/eks-d-xpress-karpenter-support-${VERSION}.tar.gz eks-d-xpress-karpenter-support-${VERSION}.tar.gz
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-packages
           retention-days: 1
@@ -192,13 +197,13 @@ jobs:
         run: npm install -g aws-cdk
 
       - name: Download arm64 build artifacts (contains tenant zip)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: release-arm64
           path: /tmp/release-arm64
 
       - name: Download package artifacts (credential + mgmt zips)
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: release-packages
           path: /tmp/release-packages
@@ -262,7 +267,7 @@ EOF
           tar czf "eks-d-xpress-control-plane-${VERSION}.tar.gz" "${BUNDLE}"
 
       - name: Upload CDK artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-cdk
           retention-days: 1
@@ -273,7 +278,7 @@ EOF
     needs: [build, multiarch-manifest-build, build-jvm-based-lambdas, package-cdk]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
