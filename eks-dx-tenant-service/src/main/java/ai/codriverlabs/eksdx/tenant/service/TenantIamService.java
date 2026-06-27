@@ -36,7 +36,7 @@ public class TenantIamService {
     public record IamResult(String roleName, String instanceProfileName) {}
 
     public IamResult createTenantRole(String tenantId, String clusterName, String region, String accountId) {
-        String roleName = "eks-d-xpress-tenant-" + tenantId + "-" + region + "-instance-role";
+        String roleName = "eks-dx-t-" + tenantId + "-ir";
 
         try {
             iam.createRole(CreateRoleRequest.builder()
@@ -56,7 +56,7 @@ public class TenantIamService {
 
         iam.putRolePolicy(PutRolePolicyRequest.builder()
             .roleName(roleName)
-            .policyName("eks-d-xpress-tenant-policy")
+            .policyName("eks-dx-tenant-policy")
             .policyDocument(tenantInlinePolicy(tenantId, clusterName, region, accountId))
             .build());
 
@@ -93,7 +93,7 @@ public class TenantIamService {
                   "Sid": "SecretsAccess",
                   "Effect": "Allow",
                   "Action": "secretsmanager:GetSecretValue",
-                  "Resource": "arn:aws:secretsmanager:%s:%s:secret:eks-d-xpress/tenant/%s/*"
+                  "Resource": "arn:aws:secretsmanager:%s:%s:secret:eks-dx/t/%s/*"
                 },
                 {
                   "Sid": "EksDxApiInvoke",
@@ -271,7 +271,7 @@ public class TenantIamService {
                   "Sid": "KarpenterPassRole",
                   "Effect": "Allow",
                   "Action": "iam:PassRole",
-                  "Resource": "arn:aws:iam::%s:role/eks-d-xpress-tenant-%s-instance-role",
+                  "Resource": "arn:aws:iam::%s:role/eks-dx-t-%s-ir",
                   "Condition": { "StringEquals": { "iam:PassedToService": "ec2.amazonaws.com" } }
                 },
                 {

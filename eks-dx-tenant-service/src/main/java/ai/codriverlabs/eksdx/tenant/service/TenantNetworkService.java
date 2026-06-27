@@ -68,10 +68,10 @@ public class TenantNetworkService {
                     Tag.builder().key("Name").value(tenantId + "-public-subnet").build(),
                     Tag.builder().key("SubnetIndex").value(String.valueOf(subnetIndex)).build(),
                     Tag.builder().key("SubnetType").value("Public").build(),
-                    Tag.builder().key("eks-d-xpress-tenant").value(tenantId).build(),
+                    Tag.builder().key("eks-dx-tenant").value(tenantId).build(),
                     Tag.builder().key("kubernetes.io/cluster/" + clusterName).value("owned").build(),
                     Tag.builder().key("kubernetes.io/role/elb").value("1").build(),
-                    Tag.builder().key("Platform").value("eks-d-xpress").build())
+                    Tag.builder().key("Platform").value("eks-dx").build())
                 .build())
             .build()).subnet().subnetId();
         LOG.infof("Created public subnet %s (%s) for tenant %s", publicSubnetId, publicCidr, tenantId);
@@ -87,10 +87,10 @@ public class TenantNetworkService {
                 .tags(
                     Tag.builder().key("Name").value(tenantId + "-private-subnet").build(),
                     Tag.builder().key("SubnetType").value("Private").build(),
-                    Tag.builder().key("eks-d-xpress-tenant").value(tenantId).build(),
+                    Tag.builder().key("eks-dx-tenant").value(tenantId).build(),
                     Tag.builder().key("kubernetes.io/cluster/" + clusterName).value("owned").build(),
                     Tag.builder().key("kubernetes.io/role/internal-elb").value("1").build(),
-                    Tag.builder().key("Platform").value("eks-d-xpress").build())
+                    Tag.builder().key("Platform").value("eks-dx").build())
                 .build())
             .build()).subnet().subnetId();
         LOG.infof("Created private subnet %s (%s) for tenant %s", privateSubnetId, privateCidr, tenantId);
@@ -114,7 +114,7 @@ public class TenantNetworkService {
     }
 
     private String createTenantSecurityGroup(String tenantId, String clusterName, String vpcId, String vpcCidr, String sshCidr) {
-        String sgName = tenantId + "-eks-d-xpress";
+        String sgName = "eks-dx-t-" + tenantId + "-sg";
         String sgId = ec2.createSecurityGroup(CreateSecurityGroupRequest.builder()
             .groupName(sgName)
             .description("EKS-D tenant: SSH, Kubernetes API, kubelet, pod networking")
@@ -123,9 +123,9 @@ public class TenantNetworkService {
                 .resourceType(software.amazon.awssdk.services.ec2.model.ResourceType.SECURITY_GROUP)
                 .tags(
                     Tag.builder().key("Name").value(sgName).build(),
-                    Tag.builder().key("eks-d-xpress-tenant").value(tenantId).build(),
+                    Tag.builder().key("eks-dx-tenant").value(tenantId).build(),
                     Tag.builder().key("kubernetes.io/cluster/" + clusterName).value("owned").build(),
-                    Tag.builder().key("Platform").value("eks-d-xpress").build())
+                    Tag.builder().key("Platform").value("eks-dx").build())
                 .build())
             .build()).groupId();
 
@@ -175,7 +175,7 @@ public class TenantNetworkService {
             .filters(
                 Filter.builder().name("vpc-id").values(vpcId).build(),
                 Filter.builder().name("tag:SubnetType").values("Public").build(),
-                Filter.builder().name("tag:eks-d-xpress-tenant").values("*").build())
+                Filter.builder().name("tag:eks-dx-tenant").values("*").build())
             .build()).subnets();
 
         int maxIndex = 0;

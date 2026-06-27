@@ -112,17 +112,37 @@ public class TenantProvisioningService {
     @ConfigProperty(name = "eks-d-xpress.tenant.availability-zone", defaultValue = "")
     String availabilityZone;
 
+    @Inject TenantIdGenerator tenantIdGenerator;
+
     // -------------------------------------------------------------------------
     // Provision
     // -------------------------------------------------------------------------
 
-    public String provision(String tenantId, String arch, String ec2PricingModel, String k8sVersion, boolean assignElasticIp, int diskSizeGb, String sshCidr, String ownerArn) {
-        LOG.infof("Provisioning tenant: %s (arch=%s, pricing=%s, k8s=%s)", tenantId, arch, ec2PricingModel, k8sVersion);
+    /**
+     * Provision a managed or unmanaged tenant.
+     *
+     * @param clusterName    user-provided, validated cluster name
+     * @param managed        true = provision EC2+EKS-D; false = create record only
+     * @param idcUserId      IAM Identity Center user ID (used to derive tenantId)
+     * @param ownerArn       caller IAM ARN
+     * @return system-derived tenantId
+     */
+    public String provision(String clusterName, boolean managed, String idcUserId, String ownerArn,
+                            String arch, String ec2PricingModel, String k8sVersion,
+                            boolean assignElasticIp, int diskSizeGb, String sshCidr) {
+        String createdAt = Instant.now().toString();
+        String tenantId = tenantIdGenerator.generate(idcUserId, createdAt);
+
+        LOG.infof("Provisioning tenant: %s (cluster=%s, managed=%s)", tenantId, clusterName, managed);
+
+        if (!managed) {
+            writeInitialRecord(tenantId, clusterName, false, idcUserId, ownerArn, createdAt, null, null, null);
+            return tenantId;
+        }
 
         String launchTemplateId = resolveLaunchTemplate(arch, ec2PricingModel);
         String region = System.getenv().getOrDefault("AWS_REGION", "us-east-1");
         String accountId = sts.getCallerIdentity(GetCallerIdentityRequest.builder().build()).account();
-        String clusterName = "eks-d-xpress-" + tenantId;
 
         // Track created resources for rollback on failure
         var created = new ProvisionedResources();
@@ -137,24 +157,24 @@ public class TenantProvisioningService {
             // 2. Secrets (SA signing key + SSH key pair)
             String signingKeyPem = generateRsaPrivateKeyPem();
             secretsManager.createSecret(CreateSecretRequest.builder()
-                .name("eks-d-xpress/tenant/" + tenantId + "/signing-key")
+                .name("eks-dx/t/" + tenantId + "/signing-key")
                 .secretString(signingKeyPem).build());
-            created.signingKeySecret = "eks-d-xpress/tenant/" + tenantId + "/signing-key";
+            created.signingKeySecret = "eks-dx/t/" + tenantId + "/signing-key";
 
             CreateKeyPairResponse keyPairResp = ec2.createKeyPair(CreateKeyPairRequest.builder()
-                .keyName("eks-d-xpress-tenant-" + tenantId)
+                .keyName("eks-dx-t-" + tenantId + "-key")
                 .tagSpecifications(software.amazon.awssdk.services.ec2.model.TagSpecification.builder()
                     .resourceType(software.amazon.awssdk.services.ec2.model.ResourceType.KEY_PAIR)
-                    .tags(software.amazon.awssdk.services.ec2.model.Tag.builder().key("project").value("eks-d-xpress").build(),
-                          software.amazon.awssdk.services.ec2.model.Tag.builder().key("eks-d-xpress-tenant").value(tenantId).build())
+                    .tags(software.amazon.awssdk.services.ec2.model.Tag.builder().key("project").value("eks-dx").build(),
+                          software.amazon.awssdk.services.ec2.model.Tag.builder().key("eks-dx-tenant").value(tenantId).build())
                     .build())
                 .build());
-            created.keyPairName = "eks-d-xpress-tenant-" + tenantId;
+            created.keyPairName = "eks-dx-t-" + tenantId + "-key";
 
             String sshKeyArn = secretsManager.createSecret(CreateSecretRequest.builder()
-                .name("eks-d-xpress/tenant/" + tenantId + "/ssh-key")
+                .name("eks-dx/t/" + tenantId + "/ssh-key")
                 .secretString(keyPairResp.keyMaterial()).build()).arn();
-            created.sshKeySecret = "eks-d-xpress/tenant/" + tenantId + "/ssh-key";
+            created.sshKeySecret = "eks-dx/t/" + tenantId + "/ssh-key";
 
             // 3. IAM role + instance profile
             TenantIamService.IamResult iamResult = iamService.createTenantRole(
@@ -172,39 +192,58 @@ public class TenantProvisioningService {
             dlmService.createEtcdBackupPolicy(tenantId, clusterName, region);
             created.dlmPolicyCreated = true;
 
-            // 6. EC2 instance launch — pass created so EIP alloc ID is tracked before association
+            // 6. EC2 instance launch
             TenantEc2Service.Ec2Result ec2Result = ec2Service.launchInstance(
                 tenantId, clusterName, launchTemplateId,
                 network.publicSubnetId(), network.securityGroupId(),
-                iamResult.instanceProfileName(), "eks-d-xpress-tenant-" + tenantId,
+                iamResult.instanceProfileName(), "eks-dx-t-" + tenantId + "-key",
                 region, k8sVersion, assignElasticIp, diskSizeGb, arch,
                 network.controlPlaneIp(), accountId, network.vpcCidr(),
                 network.publicSubnetId(), network.privateSubnetId(), created);
             created.instanceId = ec2Result.instanceId();
             created.eipAllocationId = ec2Result.eipAllocationId();
 
-            // 7. Write initial DynamoDB state immediately — EIP association happens in stream Phase 1
-            String now = Instant.now().toString();
-            Map<String, AttributeValue> item = new HashMap<>();
-            item.put("tenantId", AttributeValue.fromS(tenantId));
-            item.put("instanceId", AttributeValue.fromS(ec2Result.instanceId()));
-            item.put("state", AttributeValue.fromS("provisioning"));
-            item.put("phase", AttributeValue.fromS("EC2 instance launched"));
-            item.put("progress", AttributeValue.fromN("0"));
-            item.put("sshKeySecretArn", AttributeValue.fromS(sshKeyArn));
-            item.put("updatedAt", AttributeValue.fromS(now));
-            item.put("ec2PricingModel", AttributeValue.fromS(ec2PricingModel));
-            if (ownerArn != null) item.put("ownerArn", AttributeValue.fromS(ownerArn));
-            if (ec2Result.eipAllocationId() != null)
-                item.put("eipAllocationId", AttributeValue.fromS(ec2Result.eipAllocationId()));
-            dynamoDb.putItem(PutItemRequest.builder().tableName(tenantsTable).item(item).build());
+            // 7. Write initial DynamoDB state
+            writeInitialRecord(tenantId, clusterName, true, idcUserId, ownerArn, createdAt,
+                ec2Result.instanceId(), sshKeyArn,
+                ec2PricingModel);
+            if (ec2Result.eipAllocationId() != null) {
+                dynamoDb.updateItem(UpdateItemRequest.builder()
+                    .tableName(tenantsTable)
+                    .key(Map.of("tenantId", AttributeValue.fromS(tenantId)))
+                    .updateExpression("SET eipAllocationId = :e")
+                    .expressionAttributeValues(Map.of(":e", AttributeValue.fromS(ec2Result.eipAllocationId())))
+                    .build());
+            }
 
             return tenantId;
         } catch (Exception e) {
-            LOG.errorf("Provisioning failed at step, initiating rollback for tenant %s: %s", tenantId, e.getMessage());
+            LOG.errorf("Provisioning failed, initiating rollback for tenant %s: %s", tenantId, e.getMessage());
             rollback(tenantId, clusterName, created);
             throw e;
         }
+    }
+
+    private void writeInitialRecord(String tenantId, String clusterName, boolean managed,
+                                    String idcUserId, String ownerArn, String createdAt,
+                                    String instanceId, String sshKeyArn, String ec2PricingModel) {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("tenantId",     AttributeValue.fromS(tenantId));
+        item.put("clusterName",  AttributeValue.fromS(clusterName));
+        item.put("managed",      AttributeValue.fromS(String.valueOf(managed)));
+        item.put("createdAt",    AttributeValue.fromS(createdAt));
+        item.put("updatedAt",    AttributeValue.fromS(createdAt));
+        if (idcUserId != null)      item.put("idcUserId",  AttributeValue.fromS(idcUserId));
+        if (ownerArn != null)       item.put("ownerArn",   AttributeValue.fromS(ownerArn));
+        if (managed) {
+            item.put("state",           AttributeValue.fromS("provisioning"));
+            item.put("phase",           AttributeValue.fromS("EC2 instance launched"));
+            item.put("progress",        AttributeValue.fromN("0"));
+            if (instanceId != null)     item.put("instanceId",      AttributeValue.fromS(instanceId));
+            if (sshKeyArn != null)      item.put("sshKeySecretArn", AttributeValue.fromS(sshKeyArn));
+            if (ec2PricingModel != null) item.put("ec2PricingModel", AttributeValue.fromS(ec2PricingModel));
+        }
+        dynamoDb.putItem(PutItemRequest.builder().tableName(tenantsTable).item(item).build());
     }
 
     // -------------------------------------------------------------------------
@@ -662,17 +701,21 @@ public class TenantProvisioningService {
     private TenantItem itemToTenant(Map<String, AttributeValue> item) {
         return new TenantItem(
             s(item, "tenantId"),
-            s(item, "instanceId"),
+            s(item, "clusterName"),
+            "true".equals(s(item, "managed")),
+            s(item, "idcUserId"),
+            s(item, "ownerArn"),
+            s(item, "createdAt"),
+            s(item, "updatedAt"),
             s(item, "state"),
             s(item, "phase"),
             item.containsKey("progress") ? Integer.parseInt(item.get("progress").n()) : 0,
+            s(item, "instanceId"),
             s(item, "publicIp"),
             s(item, "eipAllocationId"),
             s(item, "sshKeySecretArn"),
-            s(item, "updatedAt"),
-            s(item, "error"),
             s(item, "ec2PricingModel"),
-            s(item, "ownerArn")
+            s(item, "error")
         );
     }
 

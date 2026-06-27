@@ -34,7 +34,7 @@ public class TenantDlmService {
 
     public String createEtcdBackupPolicy(String tenantId, String clusterName, String region) {
         // DLM execution role
-        String roleName = "eks-d-xpress-tenant-" + tenantId + "-" + region + "-dlm";
+        String roleName = "eks-dx-t-" + tenantId + "-dlm";
         try {
             iam.createRole(CreateRoleRequest.builder()
                 .roleName(roleName)
@@ -80,7 +80,7 @@ public class TenantDlmService {
                     .tagsToAdd(List.of(
                         Tag.builder().key("SnapshotCreator").value("DLM").build(),
                         Tag.builder().key("Cluster").value(clusterName).build(),
-                        Tag.builder().key("Platform").value("eks-d-xpress").build()))
+                        Tag.builder().key("Platform").value("eks-dx").build()))
                     .build()))
                 .build())
             .build()).policyId();

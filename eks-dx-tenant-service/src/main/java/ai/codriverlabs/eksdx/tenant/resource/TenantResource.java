@@ -33,7 +33,8 @@ public class TenantResource {
     @Inject ai.codriverlabs.eksdx.tenant.service.DryRunProvisioningService dryRunService;
 
     public static class CreateTenantRequest {
-        @JsonProperty("tenantId") public String tenantId;
+        @JsonProperty("clusterName") public String clusterName;
+        @JsonProperty("managed") public Boolean managed;
         @JsonProperty("arch") public String arch;
         @JsonProperty("ec2PricingModel") public String ec2PricingModel;
         @JsonProperty("k8sVersion") public String k8sVersion;
@@ -45,46 +46,65 @@ public class TenantResource {
     @POST
     public Response createTenant(CreateTenantRequest request, @Context ContainerRequestContext ctx) {
         try {
-            if (request == null || request.tenantId == null || request.tenantId.isBlank())
-                return error(400, "InvalidParameterException", "tenantId is required");
+            if (request == null || request.clusterName == null || request.clusterName.isBlank())
+                return error(400, "InvalidParameterException", "clusterName is required");
+            if (!request.clusterName.matches("^[a-zA-Z][a-zA-Z0-9-]{0,99}$"))
+                return error(400, "InvalidParameterException",
+                    "clusterName must start with a letter, contain only [a-zA-Z0-9-], max 100 chars");
 
             String callerArn = (String) ctx.getProperty("callerArn");
             if (callerArn == null || callerArn.isBlank())
                 return error(403, "AccessDeniedException", "Cannot resolve caller identity");
 
-            // Quota enforcement
-            int existing = provisioningService.countTenantsByOwner(callerArn);
-            if (existing >= provisioningService.getMaxTenantsPerCaller())
-                return error(429, "QuotaExceededException",
-                    "Quota exceeded: maximum " + provisioningService.getMaxTenantsPerCaller()
-                    + " tenant(s) per caller, you have " + existing);
+            String idcUserId = (String) ctx.getProperty("idcUserId");
+            if (idcUserId == null || idcUserId.isBlank())
+                idcUserId = callerArn; // fallback: use ARN as stable identity input
+
+            boolean managed = !Boolean.FALSE.equals(request.managed); // default true
+
+            // Quota enforcement (only for managed tenants — unmanaged have no EC2 cost)
+            if (managed) {
+                int existing = provisioningService.countTenantsByOwner(callerArn);
+                if (existing >= provisioningService.getMaxTenantsPerCaller())
+                    return error(429, "QuotaExceededException",
+                        "Quota exceeded: maximum " + provisioningService.getMaxTenantsPerCaller()
+                        + " tenant(s) per caller, you have " + existing);
+            }
 
             if (dryRunService.isEnabled()) {
-                LOG.infof("DRY RUN: simulating provision for tenant %s", request.tenantId);
-                return Response.accepted(Map.of("tenantId", request.tenantId)).build();
+                LOG.infof("DRY RUN: simulating provision for cluster %s", request.clusterName);
+                return Response.accepted(Map.of("tenantId", "dryrun00", "clusterName", request.clusterName, "managed", managed)).build();
             }
-            String arch = request.arch != null ? request.arch : "arm64";
-            String pricingModel = request.ec2PricingModel != null ? request.ec2PricingModel : "spot";
-            String k8sVersion = request.k8sVersion != null ? request.k8sVersion : "1.35";
-            if (!arch.equals("arm64") && !arch.equals("x86_64"))
-                return error(400, "InvalidParameterException", "arch must be arm64 or x86_64");
-            if (!pricingModel.equals("spot") && !pricingModel.equals("ondemand"))
-                return error(400, "InvalidParameterException", "ec2PricingModel must be spot or ondemand");
-            // Resolve SSH CIDR: explicit > API Gateway caller IP > reject
-            String sshCidr = request.sshCidr;
-            if (sshCidr == null || sshCidr.isBlank()) {
-                String sourceIp = (String) ctx.getProperty("sourceIp");
-                if (sourceIp == null || sourceIp.isBlank())
-                    return error(400, "InvalidParameterException", "Cannot determine caller IP; provide sshCidr explicitly");
-                sshCidr = sourceIp + "/32";
+
+            if (managed) {
+                String arch = request.arch != null ? request.arch : "arm64";
+                String pricingModel = request.ec2PricingModel != null ? request.ec2PricingModel : "spot";
+                String k8sVersion = request.k8sVersion != null ? request.k8sVersion : "1.35";
+                if (!arch.equals("arm64") && !arch.equals("x86_64"))
+                    return error(400, "InvalidParameterException", "arch must be arm64 or x86_64");
+                if (!pricingModel.equals("spot") && !pricingModel.equals("ondemand"))
+                    return error(400, "InvalidParameterException", "ec2PricingModel must be spot or ondemand");
+
+                String sshCidr = request.sshCidr;
+                if (sshCidr == null || sshCidr.isBlank()) {
+                    String sourceIp = (String) ctx.getProperty("sourceIp");
+                    if (sourceIp == null || sourceIp.isBlank())
+                        return error(400, "InvalidParameterException", "Cannot determine caller IP; provide sshCidr explicitly");
+                    sshCidr = sourceIp + "/32";
+                }
+                if (sshCidr.equals("0.0.0.0/0") || sshCidr.equals("::/0"))
+                    return error(400, "InvalidParameterException", "sshCidr must not be open to the world");
+
+                String id = provisioningService.provision(request.clusterName, true, idcUserId, callerArn,
+                    arch, pricingModel, k8sVersion,
+                    Boolean.TRUE.equals(request.assignElasticIp),
+                    request.diskSizeGb != null ? request.diskSizeGb : 20, sshCidr);
+                return Response.accepted(Map.of("tenantId", id, "clusterName", request.clusterName, "managed", true)).build();
+            } else {
+                String id = provisioningService.provision(request.clusterName, false, idcUserId, callerArn,
+                    null, null, null, false, 0, null);
+                return Response.accepted(Map.of("tenantId", id, "clusterName", request.clusterName, "managed", false)).build();
             }
-            if (sshCidr.equals("0.0.0.0/0") || sshCidr.equals("::/0"))
-                return error(400, "InvalidParameterException", "sshCidr must not be open to the world");
-            String id = provisioningService.provision(request.tenantId, arch, pricingModel, k8sVersion,
-                Boolean.TRUE.equals(request.assignElasticIp),
-                request.diskSizeGb != null ? request.diskSizeGb : 20,
-                sshCidr, callerArn);
-            return Response.accepted(Map.of("tenantId", id)).build();
         } catch (IllegalArgumentException e) {
             return error(400, "InvalidParameterException", e.getMessage());
         } catch (Exception e) {

@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
-import picocli.CommandLine.Parameters;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -25,8 +24,11 @@ public class CreateTenantCommand implements Runnable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Parameters(index = "0", description = "Tenant ID")
-    String tenantId;
+    @Option(names = "--cluster-name", required = true, description = "User-visible cluster name (e.g. my-dev-cluster)")
+    String clusterName;
+
+    @Option(names = "--unmanaged", description = "Create a record-only tenant for a standalone cluster (k3s, microk8s, etc.)")
+    boolean unmanaged;
 
     @Option(names = "--arch", defaultValue = "arm64", description = "CPU architecture: arm64 or x86_64")
     String arch;
@@ -61,13 +63,16 @@ public class CreateTenantCommand implements Runnable {
     public void run() {
         try {
             var body = new java.util.LinkedHashMap<String, Object>();
-            body.put("tenantId", tenantId);
-            body.put("arch", arch);
-            body.put("ec2PricingModel", ec2PricingModel);
-            body.put("k8sVersion", k8sVersion);
-            body.put("diskSizeGb", diskSizeGb);
-            body.put("assignElasticIp", assignElasticIp);
-            if (sshCidr != null) body.put("sshCidr", sshCidr);
+            body.put("clusterName", clusterName);
+            body.put("managed", !unmanaged);
+            if (!unmanaged) {
+                body.put("arch", arch);
+                body.put("ec2PricingModel", ec2PricingModel);
+                body.put("k8sVersion", k8sVersion);
+                body.put("diskSizeGb", diskSizeGb);
+                body.put("assignElasticIp", assignElasticIp);
+                if (sshCidr != null) body.put("sshCidr", sshCidr);
+            }
 
             EksDxConfig config = new EksDxConfig();
             String region = config.getRegion();
@@ -78,9 +83,20 @@ public class CreateTenantCommand implements Runnable {
                 System.exit(1);
             }
             String provisionUrl = provisioningUrl.replaceAll("/$", "") + "/tenants";
-            apiClient.postFunctionUrl(provisionUrl, MAPPER.writeValueAsString(body), region);
+            String responseBody = apiClient.postFunctionUrl(provisionUrl, MAPPER.writeValueAsString(body), region);
 
-            if (!wait) return;
+            JsonNode resp = MAPPER.readTree(responseBody);
+            String tenantId = resp.path("tenantId").asText();
+
+            if ("text".equals(output)) {
+                System.out.printf("Created tenant %s (cluster: %s, %s)%n",
+                    tenantId, clusterName, unmanaged ? "unmanaged" : "managed");
+            } else {
+                System.out.println(responseBody);
+            }
+
+            if (unmanaged || !wait) return;
+
             String resolvedStreamUrl = streamUrl != null ? streamUrl : config.getStreamUrl();
             if (resolvedStreamUrl == null) {
                 System.err.println("Error: stream URL not configured. Set EKS_DX_STREAM_URL or run 'eks-dx configure'.");
@@ -89,14 +105,14 @@ public class CreateTenantCommand implements Runnable {
             String url = resolvedStreamUrl.stripTrailing().replaceAll("/$", "")
                 + "/tenants/" + tenantId + "/stream";
 
-            streamProgress(url, region, System.currentTimeMillis());
+            streamProgress(url, region, tenantId, System.currentTimeMillis(), config);
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
             System.exit(1);
         }
     }
 
-    private void streamProgress(String url, String region, long startTime) {
+    private void streamProgress(String url, String region, String tenantId, long startTime, EksDxConfig config) {
         try {
             URI uri = URI.create(url);
             HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -105,13 +121,10 @@ public class CreateTenantCommand implements Runnable {
                 .GET();
 
             AwsSigV4Signer signer = AwsSigV4Signer.create(region);
-            if (signer != null) {
-                signer.sign(builder, "GET", uri, null, "lambda");
-            }
+            if (signer != null) signer.sign(builder, "GET", uri, null, "lambda");
 
-            HttpClient client = HttpClient.newHttpClient();
-            HttpResponse<java.io.InputStream> response = client.send(builder.build(),
-                HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<java.io.InputStream> response = HttpClient.newHttpClient()
+                .send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
 
             if (response.statusCode() >= 400) {
                 System.err.println("Stream error: HTTP " + response.statusCode());
@@ -146,12 +159,11 @@ public class CreateTenantCommand implements Runnable {
                         }
 
                         if (sshKey != null) {
-                            Path keyPath = config(region).tenantSshKeyPath(region, tenantId);
+                            Path keyPath = config.tenantSshKeyPath(region, tenantId);
                             Files.createDirectories(keyPath.getParent());
                             Files.writeString(keyPath, sshKey);
                             try {
-                                Files.setPosixFilePermissions(keyPath,
-                                    PosixFilePermissions.fromString("rw-------"));
+                                Files.setPosixFilePermissions(keyPath, PosixFilePermissions.fromString("rw-------"));
                             } catch (UnsupportedOperationException ignored) {}
                             if ("text".equals(output))
                                 System.out.println("SSH key saved: " + keyPath);
@@ -169,9 +181,5 @@ public class CreateTenantCommand implements Runnable {
             System.err.println("Stream error: " + e.getMessage());
             System.exit(1);
         }
-    }
-
-    private EksDxConfig config(String region) {
-        return new EksDxConfig();
     }
 }

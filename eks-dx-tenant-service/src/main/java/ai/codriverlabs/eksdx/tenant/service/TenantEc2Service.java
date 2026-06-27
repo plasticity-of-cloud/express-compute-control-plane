@@ -73,10 +73,10 @@ public class TenantEc2Service {
                 .resourceType(ResourceType.INSTANCE)
                 .tags(
                     Tag.builder().key("Name").value(clusterName).build(),
-                    Tag.builder().key("eks-d-xpress-tenant").value(tenantId).build(),
+                    Tag.builder().key("eks-dx-tenant").value(tenantId).build(),
                     Tag.builder().key("kubernetes.io/cluster/" + clusterName).value("owned").build(),
                     Tag.builder().key("ebs.csi.aws.com/cluster-name").value(clusterName).build(),
-                    Tag.builder().key("Platform").value("eks-d-xpress").build())
+                    Tag.builder().key("Platform").value("eks-dx").build())
                 .build())
             .build();
 
@@ -105,9 +105,9 @@ public class TenantEc2Service {
             .tagSpecifications(TagSpecification.builder()
                 .resourceType(ResourceType.ELASTIC_IP)
                 .tags(Tag.builder().key("Name").value(clusterName).build(),
-                      Tag.builder().key("eks-d-xpress-tenant").value(tenantId).build(),
-                      Tag.builder().key("eks-d-xpress-eip-persistent").value(String.valueOf(assignElasticIp)).build(),
-                      Tag.builder().key("project").value("eks-d-xpress").build())
+                      Tag.builder().key("eks-dx-tenant").value(tenantId).build(),
+                      Tag.builder().key("eks-dx-eip-persistent").value(String.valueOf(assignElasticIp)).build(),
+                      Tag.builder().key("project").value("eks-dx").build())
                 .build())
             .build());
         if (created != null) created.eipAllocationId = allocResp.allocationId();
@@ -132,7 +132,7 @@ public class TenantEc2Service {
                                   String accountId, String arch, String vpcCidr,
                                   String publicSubnetId, String privateSubnetId,
                                   String securityGroupId) {
-        String nodeRoleArn = "arn:aws:iam::" + accountId + ":role/" + tenantId + "-eks-dx-" + arch;
+        String nodeRoleArn = "arn:aws:iam::" + accountId + ":role/eks-dx-t-" + tenantId + "-ir";
         return """
             #!/bin/bash
             mkdir -p /opt/eks-d

@@ -99,7 +99,7 @@ update_progress "pulling-key" "Fetching SA signing key from Secrets Manager" 20
 
 mkdir -p /etc/kubernetes/pki
 aws secretsmanager get-secret-value \
-  --secret-id "eks-dx/tenant/${TENANT_ID}/signing-key" \
+  --secret-id "eks-dx/t/${TENANT_ID}/signing-key" \
   --query SecretString --output text \
   --region "${AWS_REGION}" > /etc/kubernetes/pki/sa.key
 chmod 600 /etc/kubernetes/pki/sa.key
@@ -130,7 +130,7 @@ update_progress "registering" "Registering cluster with eks-dx" 85
 kubectl get --raw /openid/v1/jwks \
   --kubeconfig /etc/kubernetes/admin.conf > /tmp/jwks.json
 
-eks-dx register-cluster "${TENANT_ID}" \
+eks-dx register-cluster "${CLUSTER_NAME}" \
   --issuer "https://${PUBLIC_IP}" \
   --jwks-file /tmp/jwks.json
 
@@ -139,13 +139,13 @@ eks-dx register-cluster "${TENANT_ID}" \
 helm install eks-dx-auth-proxy /opt/eks-dx/charts/eks-dx-auth-proxy \
   --namespace kube-system \
   --set app.envs.EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}" \
-  --set app.envs.EKS_CLUSTER_NAME="${TENANT_ID}" \
+  --set app.envs.EKS_CLUSTER_NAME="${CLUSTER_NAME}" \
   --kubeconfig /etc/kubernetes/admin.conf
 
 helm install eks-dx-pod-identity-webhook /opt/eks-dx/charts/eks-dx-pod-identity-webhook \
   --namespace kube-system \
   --set app.envs.EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}" \
-  --set app.envs.EKS_CLUSTER_NAME="${TENANT_ID}" \
+  --set app.envs.EKS_CLUSTER_NAME="${CLUSTER_NAME}" \
   --kubeconfig /etc/kubernetes/admin.conf
 
 # --- Done ---
@@ -202,7 +202,7 @@ All granted by the per-tenant instance profile role created by the provisioner L
 
 | Action | Resource | Used for |
 |---|---|---|
-| `secretsmanager:GetSecretValue` | `eks-dx/tenant/{tenantId}/*` | SA signing key fetch |
+| `secretsmanager:GetSecretValue` | `eks-dx/t/{tenantId}/*` | SA signing key fetch |
 | `execute-api:Invoke` | `POST /clusters/{tenantId}` | Cluster self-registration |
 | `dynamodb:UpdateItem` | `eks-dx-tenants` (own item only) | Progress reporting |
 

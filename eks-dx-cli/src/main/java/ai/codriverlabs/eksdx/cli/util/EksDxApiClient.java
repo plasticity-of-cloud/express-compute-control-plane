@@ -37,8 +37,9 @@ public class EksDxApiClient {
 
     /**
      * POST to a Lambda Function URL (signs with service=lambda, no 29s API Gateway limit).
+     * Returns the response body.
      */
-    public void postFunctionUrl(String url, String body, String region) {
+    public String postFunctionUrl(String url, String body, String region) {
         try {
             URI uri = URI.create(url);
             var builder = HttpRequest.newBuilder().uri(uri)
@@ -54,9 +55,11 @@ public class EksDxApiClient {
                 } catch (Exception ignored) { System.err.println(b); }
                 System.exit(1);
             }
+            return response.body();
         } catch (Exception e) {
             System.err.printf("Failed to reach provisioning URL: %s%n", e.getMessage());
             System.exit(1);
+            return null;
         }
     }
 

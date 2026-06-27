@@ -98,10 +98,13 @@ class PollEc2BootTickTest {
 
     private void mockTenantItem(String tenantId, String instanceId, String state) {
         var item = new java.util.HashMap<String, AttributeValue>();
-        item.put("tenantId", AttributeValue.fromS(tenantId));
-        item.put("state", AttributeValue.fromS(state));
-        item.put("progress", AttributeValue.fromN("0"));
-        item.put("updatedAt", AttributeValue.fromS(Instant.now().toString()));
+        item.put("tenantId",    AttributeValue.fromS(tenantId));
+        item.put("clusterName", AttributeValue.fromS("test-cluster"));
+        item.put("managed",     AttributeValue.fromS("true"));
+        item.put("createdAt",   AttributeValue.fromS(Instant.now().toString()));
+        item.put("updatedAt",   AttributeValue.fromS(Instant.now().toString()));
+        item.put("state",       AttributeValue.fromS(state));
+        item.put("progress",    AttributeValue.fromN("0"));
         if (instanceId != null) item.put("instanceId", AttributeValue.fromS(instanceId));
 
         when(dynamoDb.getItem(any(software.amazon.awssdk.services.dynamodb.model.GetItemRequest.class)))
