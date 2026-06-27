@@ -21,16 +21,12 @@ public class DeleteTenantCommand implements Runnable {
     public void run() {
         try {
             EksDxConfig config = new EksDxConfig();
-            // Use the Function URL for all tenant operations. The HTTP API returns 500
-            // because the Lambda uses response_stream mode (for SSE) which is incompatible
-            // with HTTP API proxy integration for non-streaming responses.
             String functionUrl = config.getProvisioningUrl();
-            if (functionUrl == null) functionUrl = config.getTenantApiUrl();
             if (functionUrl == null) {
-                System.err.println("Error: tenant API URL not configured. Set EKS_DX_PROVISIONING_URL or run 'eks-dx configure'.");
+                System.err.println("Error: provisioning URL not configured. Set EKS_DX_PROVISIONING_URL or run 'eks-dx configure'.");
                 System.exit(1);
             }
-            String service = functionUrl.contains(".lambda-url.") ? "lambda" : "execute-api";
+            String service = "lambda";
 
             int deleteStatus = apiClient.deleteStatusOnUrl(functionUrl, "/tenants/" + tenantId, service);
             if (deleteStatus != 204 && deleteStatus != 202 && deleteStatus != 503 && deleteStatus != 404) {

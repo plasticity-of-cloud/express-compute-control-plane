@@ -46,11 +46,6 @@ import software.amazon.awscdk.services.logs.RetentionDays;
 import software.amazon.awscdk.Tags;
 import software.amazon.awscdk.services.ssm.StringParameter;
 import software.amazon.awscdk.CfnParameter;
-import software.amazon.awscdk.services.apigatewayv2.HttpApi;
-import software.amazon.awscdk.services.apigatewayv2.HttpMethod;
-import software.amazon.awscdk.services.apigatewayv2.AddRoutesOptions;
-import software.amazon.awscdk.aws_apigatewayv2_authorizers.HttpIamAuthorizer;
-import software.amazon.awscdk.aws_apigatewayv2_integrations.HttpLambdaIntegration;
 import software.constructs.Construct;
 
 import java.nio.file.Path;
@@ -490,36 +485,6 @@ public class EksDXpressControlPlaneStack extends Stack {
         IResource associationById = associations.addResource("{id}");
         associationById.addMethod("GET", mgmtInteg, noAuth);
         associationById.addMethod("DELETE", mgmtInteg, iamAuth);
-
-        // /tenants — tenant CRUD via HTTP API (v2 payload, matches quarkus-amazon-lambda-http)
-        HttpApi tenantHttpApi = HttpApi.Builder.create(this, "TenantHttpApi")
-            .apiName("eks-d-xpress-tenant-api")
-            .build();
-
-        HttpLambdaIntegration tenantHttpInteg = HttpLambdaIntegration.Builder.create("TenantHttpInteg", tenantFn)
-            .build();
-
-        HttpIamAuthorizer tenantIamAuth = new HttpIamAuthorizer();
-
-        tenantHttpApi.addRoutes(AddRoutesOptions.builder()
-            .path("/tenants")
-            .methods(List.of(HttpMethod.POST))
-            .integration(tenantHttpInteg)
-            .authorizer(tenantIamAuth)
-            .build());
-
-        tenantHttpApi.addRoutes(AddRoutesOptions.builder()
-            .path("/tenants/{id}")
-            .methods(List.of(HttpMethod.GET, HttpMethod.DELETE))
-            .integration(tenantHttpInteg)
-            .authorizer(tenantIamAuth)
-            .build());
-
-        StringParameter.Builder.create(this, "TenantApiUrlParam")
-            .parameterName("/eks-d-xpress/control-plane/api/tenant-api-url")
-            .stringValue(tenantHttpApi.getApiEndpoint())
-            .description("EKS-DX tenant HTTP API URL — used for GET/DELETE /tenants/{id}")
-            .build();
 
         // -----------------------------------------------------------------------
         // Custom domain (conditional)

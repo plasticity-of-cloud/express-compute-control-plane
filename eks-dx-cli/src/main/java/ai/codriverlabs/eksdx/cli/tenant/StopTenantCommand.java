@@ -17,9 +17,9 @@ public class StopTenantCommand implements Runnable {
     public void run() {
         try {
             EksDxConfig config = new EksDxConfig();
-            String tenantApiUrl = config.getTenantApiUrl();
+            String tenantApiUrl = config.getProvisioningUrl();
             if (tenantApiUrl == null) {
-                System.err.println("Error: tenant API URL not configured.");
+                System.err.println("Error: provisioning URL not configured. Set EKS_DX_PROVISIONING_URL or run 'eks-dx configure'.");
                 System.exit(1);
             }
             int status = apiClient.postStatusOnUrl(tenantApiUrl, "/tenants/" + tenantId + "/stop", "");
