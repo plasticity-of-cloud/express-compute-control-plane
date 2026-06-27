@@ -303,7 +303,8 @@ Error: Self-managed mode requires the following parameters:
 | File | Change |
 |------|--------|
 | `eks-d-setup/07-install-eks-d.sh` | Add Secrets Manager fetch block before `kubeadm init`; derive `sa.pub` from `sa.key` via `openssl rsa -pubout`; add `service-account-issuer` to kubeadm config |
-| `eks-d-setup/install-eks-dx-pod-identity.sh` | Remove cluster registration step (section "1. Register cluster"). In managed mode the cluster is already pre-registered in DynamoDB by TenantProvisioningService (step 6). The script should skip straight to installing the Helm charts (auth-proxy, webhook, agent). The `eks-dx register-cluster` call, JWKS fetch from live API (`kubectl get --raw /openid/v1/jwks`), and issuer discovery (`/.well-known/openid-configuration`) are no longer needed. |
+| `eks-d-setup/install-eks-dx-pod-identity.sh` | Add `--oidc-mode` flag (`managed` or `self-managed`). When `managed`: skip cluster registration (no `eks-dx register-cluster`, no JWKS fetch, no issuer discovery) — the cluster is already pre-registered by TenantProvisioningService. Install only the Helm charts (auth-proxy, webhook, agent). When `self-managed`: retain current logic (read JWKS from live API, discover issuer, call `eks-dx register-cluster`, then install charts). |
+| `eks-d-setup/12-install-eks-dx-pod-identity.sh` | Pass `--oidc-mode managed` when invoking `install-eks-dx-pod-identity.sh` (Golden AMI always runs in managed mode) |
 
 ## Implementation Notes
 
