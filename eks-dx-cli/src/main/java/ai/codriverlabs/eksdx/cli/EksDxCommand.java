@@ -12,6 +12,8 @@ import picocli.CommandLine.Command;
         ConfigureCommand.class,
         CreateClusterCmd.class,
         DeleteClusterCmd.class,
+        StopClusterCmd.class,
+        ResumeClusterCmd.class,
         RegisterClusterCmd.class,
         DeregisterClusterCmd.class,
         DescribeClusterCmd.class,

@@ -1,0 +1,31 @@
+[
+  {
+    "name": "org.bouncycastle.jcajce.provider.asymmetric.rsa.BCRSAPublicKey",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.bouncycastle.jcajce.provider.asymmetric.rsa.BCRSAPrivateCrtKey",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.bouncycastle.jce.provider.BouncyCastleProvider",
+    "methods": [{"name": "<init>", "parameterTypes": []}]
+  },
+  {
+    "name": "org.bouncycastle.asn1.x509.BasicConstraints",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.bouncycastle.asn1.x509.AlgorithmIdentifier",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.bouncycastle.cert.X509v3CertificateBuilder",
+    "allPublicMethods": true
+  },
+  {
+    "name": "org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder",
+    "allPublicMethods": true,
+    "allDeclaredConstructors": true
+  }
+]
