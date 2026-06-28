@@ -362,6 +362,24 @@ After removing `POST /clusters`, mgmt-service exposes:
 
 ## Implementation Notes
 
+### Documentation update status: ✅ Complete
+
+All user-facing documents have been updated to the new CLI commands:
+
+| File | Changes applied |
+|------|----------------|
+| `docs/user-guides/integration-eks-d-xpress.md` | Rewritten: provisioning flow updated to reflect centrally-managed PKI (no manual registration), `create-tenant` → `create-cluster`, `delete-tenant` → `delete-cluster` |
+| `docs/user-guides/integration-eks-d-xpress-ce.md` | `create-tenant` → `create-cluster`, `register-cluster` → `create-cluster --oidc-mode self-managed`, `delete-tenant` → `delete-cluster` |
+| `docs/user-guides/integration-k3s.md` | `register-cluster` → `create-cluster --oidc-mode self-managed` |
+| `docs/user-guides/deployment.md` | Architecture diagram updated (tenant-service owns `/clusters`), all CLI examples updated |
+| `docs/user-guides/ec2-k3s-pod-identity/README.md` | `register-cluster` → `create-cluster --oidc-mode self-managed`, `deregister-cluster` → `delete-cluster` |
+| `docs/user-guides/ec2-k3s-pod-identity/setup.sh` | `register-cluster` → `create-cluster --oidc-mode self-managed` |
+| `docs/user-guides/iam/iam-role-setup.md` | `register-cluster` → `create-cluster` |
+
+Zero references to deprecated commands remain in `docs/user-guides/`.
+
+### Technical notes
+
 **Key generation** — Use Bouncy Castle (`org.bouncycastle:bcpkix-jdk18on`, already compatible with GraalVM native) for RSA key pair generation and X.509 cert construction. The CA cert is self-signed in the sense that it's a root cert, but the signature comes from the KMS key (via `kms:Sign` with `RSASSA_PKCS1_V1_5_SHA_256`).
 
 **Secrets Manager paths** — Consistent with existing SSH key path (`eks-dx/tenant/<id>/ssh-key`):
@@ -419,8 +437,6 @@ eks-dx delete-cluster --name my-k3s
 eks-dx create-association --cluster my-cluster --namespace default \
   --service-account app-sa --role-arn arn:aws:iam::123456789012:role/app-role
 ```
-
-## Enterprise Positioning
 
 - **Default**: KMS-backed shared signing key + per-tenant self-signed CA stored in Secrets Manager. Auditable via CloudTrail, HSM-backed, near-zero cost.
 - **Enterprise add-on**: ACM PCA deployed in the customer's own account. Customer bears the PCA cost. Integrate via `aws-privateca-issuer`.
