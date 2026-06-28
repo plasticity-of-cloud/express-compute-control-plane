@@ -14,8 +14,6 @@ import picocli.CommandLine.Command;
         DeleteClusterCmd.class,
         StopClusterCmd.class,
         ResumeClusterCmd.class,
-        RegisterClusterCmd.class,
-        DeregisterClusterCmd.class,
         DescribeClusterCmd.class,
         ListClustersCmd.class,
         UpdateClusterCmd.class,
@@ -23,9 +21,5 @@ import picocli.CommandLine.Command;
         DeleteAssociationCmd.class,
         DescribeAssociationCmd.class,
         ListAssociationsCmd.class,
-        CreateTenantCmd.class,
-        DeleteTenantCmd.class,
-        StopTenantCmd.class,
-        ResumeTenantCmd.class,
     })
 public class EksDxCommand {}
