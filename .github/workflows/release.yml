@@ -86,7 +86,7 @@ jobs:
           cp eks-dx-tenant-service/target/function.zip eks-dx-tenant-service-${VERSION}-${{ matrix.arch }}.zip
 
       - name: Upload arch artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.arch }}
           retention-days: 1
@@ -145,7 +145,7 @@ jobs:
           cp eks-dx-karpenter-support/target/helm/kubernetes/eks-d-xpress-karpenter-support-${VERSION}.tar.gz eks-d-xpress-karpenter-support-${VERSION}.tar.gz
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-packages
           retention-days: 1
@@ -244,7 +244,7 @@ jobs:
           tar czf "eks-d-xpress-control-plane-${VERSION}.tar.gz" "${BUNDLE}"
 
       - name: Upload CDK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-cdk
           retention-days: 1
