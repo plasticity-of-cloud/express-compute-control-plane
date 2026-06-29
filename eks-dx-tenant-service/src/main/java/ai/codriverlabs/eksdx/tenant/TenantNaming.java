@@ -17,4 +17,6 @@ public final class TenantNaming {
     public static String securityGroupName(String tenantId) { return RESOURCE_PREFIX + tenantId + "-sg"; }
     public static String keyPairName(String tenantId) { return RESOURCE_PREFIX + tenantId + "-key"; }
     public static String secretPath(String tenantId, String name) { return SECRET_PREFIX + tenantId + "/" + name; }
+    public static String queueName(String clusterName) { return RESOURCE_PREFIX + clusterName; }
+    public static String eventRuleName(String clusterName, String suffix) { return RESOURCE_PREFIX + clusterName + "-" + suffix; }
 }

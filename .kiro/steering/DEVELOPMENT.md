@@ -251,3 +251,11 @@ ssh -i ~/.eks-d-xpress/tenants/us-east-1/<tenant-id>.pem ec2-user@<tenant-ip> \
 ```
 
 The script reads env vars from `/opt/eks-d/version.env` and `/opt/eks-d/cluster.env`, picks up the chart from `/opt/eks-d-setup/charts/`, and runs `helm upgrade --install` with the correct cluster identity values.
+
+
+## Java 25 Development Best Practices
+
+- **Constants over inline strings**: All resource name prefixes, path prefixes, and repeated string literals must be declared as `static final` constants in a dedicated class (e.g., `TenantNaming`). Never inline magic strings like `"eks-dx-tenant-"` directly in business logic.
+- **Single source of truth**: If a string is used in more than one place, extract it. If it defines an AWS resource naming convention or IAM policy scope, it belongs in the naming constants class.
+- **Method accessors for compound names**: Use static factory methods (e.g., `TenantNaming.roleName(tenantId)`) rather than string concatenation in service code.
+- **Naming consistency**: All tenant-scoped AWS resources use `TenantNaming.RESOURCE_PREFIX` (`eks-dx-tenant-`). Shared infrastructure resources use `eks-d-xpress-` (CDK stack-level, not per-tenant).

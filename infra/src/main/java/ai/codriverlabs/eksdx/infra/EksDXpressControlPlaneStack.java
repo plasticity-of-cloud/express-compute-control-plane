@@ -428,7 +428,7 @@ public class EksDXpressControlPlaneStack extends Stack {
         // SQS: Karpenter interruption queue
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
             .actions(List.of("sqs:CreateQueue", "sqs:DeleteQueue", "sqs:GetQueueUrl"))
-            .resources(List.of(String.format("arn:aws:sqs:%s:%s:eks-d-xpress-*",
+            .resources(List.of(String.format("arn:aws:sqs:%s:%s:eks-dx-tenant-*",
                 Stack.of(this).getRegion(), Stack.of(this).getAccount())))
             .build());
         // EventBridge: spot interruption rules
@@ -436,7 +436,7 @@ public class EksDXpressControlPlaneStack extends Stack {
             .actions(List.of(
                 "events:PutRule", "events:PutTargets",
                 "events:RemoveTargets", "events:DeleteRule"))
-            .resources(List.of(String.format("arn:aws:events:%s:%s:rule/eks-d-xpress-*",
+            .resources(List.of(String.format("arn:aws:events:%s:%s:rule/eks-dx-tenant-*",
                 Stack.of(this).getRegion(), Stack.of(this).getAccount())))
             .build());
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()

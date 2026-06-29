@@ -633,22 +633,23 @@ public class TenantProvisioningService {
     }
 
     private String createInterruptionQueue(String clusterName, String region, String accountId) {
+        String queueName = TenantNaming.queueName(clusterName);
         sqs.createQueue(software.amazon.awssdk.services.sqs.model.CreateQueueRequest.builder()
-            .queueName(clusterName)
+            .queueName(queueName)
             .attributes(Map.of(
                 software.amazon.awssdk.services.sqs.model.QueueAttributeName.MESSAGE_RETENTION_PERIOD, "300"))
             .build());
-        String queueArn = "arn:aws:sqs:" + region + ":" + accountId + ":" + clusterName;
-        LOG.infof("Created SQS queue %s", clusterName);
+        String queueArn = "arn:aws:sqs:" + region + ":" + accountId + ":" + queueName;
+        LOG.infof("Created SQS queue %s", queueName);
         return queueArn;
     }
 
     private void createEventBridgeRules(String clusterName, String queueArn) {
-        createEventBridgeRule(clusterName + "-spot-interruption",
+        createEventBridgeRule(TenantNaming.eventRuleName(clusterName, "spot-interruption"),
             "{\"source\":[\"aws.ec2\"],\"detail-type\":[\"EC2 Spot Instance Interruption Warning\"]}", queueArn);
-        createEventBridgeRule(clusterName + "-instance-state-change",
+        createEventBridgeRule(TenantNaming.eventRuleName(clusterName, "instance-state-change"),
             "{\"source\":[\"aws.ec2\"],\"detail-type\":[\"EC2 Instance State-change Notification\"]}", queueArn);
-        createEventBridgeRule(clusterName + "-instance-rebalance",
+        createEventBridgeRule(TenantNaming.eventRuleName(clusterName, "instance-rebalance"),
             "{\"source\":[\"aws.ec2\"],\"detail-type\":[\"EC2 Instance Rebalance Recommendation\"]}", queueArn);
         LOG.infof("Created EventBridge rules for %s", clusterName);
     }
@@ -666,8 +667,8 @@ public class TenantProvisioningService {
     }
 
     private void deleteEventBridgeRules(String clusterName) {
-        for (String suffix : List.of("-spot-interruption", "-instance-state-change", "-instance-rebalance")) {
-            String ruleName = clusterName + suffix;
+        for (String suffix : List.of("spot-interruption", "instance-state-change", "instance-rebalance")) {
+            String ruleName = TenantNaming.eventRuleName(clusterName, suffix);
             try {
                 events.removeTargets(software.amazon.awssdk.services.cloudwatchevents.model.RemoveTargetsRequest.builder()
                     .rule(ruleName).ids("sqs").build());
@@ -681,7 +682,7 @@ public class TenantProvisioningService {
 
     private void deleteInterruptionQueue(String clusterName) {
         String queueUrl = sqs.getQueueUrl(software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest.builder()
-            .queueName(clusterName).build()).queueUrl();
+            .queueName(TenantNaming.queueName(clusterName)).build()).queueUrl();
         sqs.deleteQueue(software.amazon.awssdk.services.sqs.model.DeleteQueueRequest.builder()
             .queueUrl(queueUrl).build());
     }
