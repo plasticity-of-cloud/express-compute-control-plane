@@ -125,12 +125,17 @@ public class EksDxApiClient {
 
     /** POST to a given base URL, returns status code without throwing on 4xx/5xx. */
     public int postStatusOnUrl(String baseUrl, String path, String body) {
+        return postStatusOnUrl(baseUrl, path, body, "execute-api");
+    }
+
+    /** POST to a given base URL, returns status code without throwing on 4xx/5xx. */
+    public int postStatusOnUrl(String baseUrl, String path, String body, String service) {
         try {
             URI uri = URI.create(baseUrl.replaceAll("/$", "") + path);
             var builder = HttpRequest.newBuilder().uri(uri)
                 .method("POST", HttpRequest.BodyPublishers.ofString(body))
                 .timeout(java.time.Duration.ofSeconds(35));
-            if (signer != null) signer.sign(builder, "POST", uri, body, "execute-api");
+            if (signer != null) signer.sign(builder, "POST", uri, body, service);
             else builder.header("Content-Type", "application/json");
             return httpClient.send(builder.build(), HttpResponse.BodyHandlers.discarding()).statusCode();
         } catch (Exception e) {
@@ -140,11 +145,16 @@ public class EksDxApiClient {
 
     /** GET body as string from a given base URL, returns null on error. */
     public String getBodyOnUrl(String baseUrl, String path) {
+        return getBodyOnUrl(baseUrl, path, "execute-api");
+    }
+
+    /** GET body as string from a given base URL with explicit service signing, returns null on error. */
+    public String getBodyOnUrl(String baseUrl, String path, String service) {
         try {
             URI uri = URI.create(baseUrl.replaceAll("/$", "") + path);
             var builder = HttpRequest.newBuilder().uri(uri).GET()
                 .timeout(java.time.Duration.ofSeconds(35));
-            if (signer != null) signer.sign(builder, "GET", uri, null, "execute-api");
+            if (signer != null) signer.sign(builder, "GET", uri, null, service);
             else builder.header("Content-Type", "application/json");
             var response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             return response.statusCode() < 400 ? response.body() : null;

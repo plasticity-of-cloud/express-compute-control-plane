@@ -141,6 +141,57 @@ public class ClusterResource {
         }
     }
 
+    @GET
+    @Path("/{name}")
+    public Response getCluster(@PathParam("name") String name, @Context ContainerRequestContext ctx) {
+        try {
+            String callerArn = (String) ctx.getProperty("callerArn");
+            TenantItem item = provisioningService.getStateByClusterName(name);
+            if (callerArn != null && item.ownerArn() != null && !callerArn.equals(item.ownerArn()))
+                return error(404, "NotFoundException", "Cluster not found: " + name);
+            return Response.ok(item).build();
+        } catch (IllegalArgumentException e) {
+            return error(404, "NotFoundException", e.getMessage());
+        } catch (Exception e) {
+            LOG.errorf("Get cluster error: %s", e.getMessage());
+            return error(500, "InternalServerException", "Internal server error");
+        }
+    }
+
+    @POST
+    @Path("/{name}/stop")
+    public Response stopCluster(@PathParam("name") String name, @Context ContainerRequestContext ctx) {
+        try {
+            String callerArn = (String) ctx.getProperty("callerArn");
+            provisioningService.stopByClusterName(name, callerArn);
+            return Response.accepted().build();
+        } catch (IllegalArgumentException e) {
+            return error(404, "NotFoundException", e.getMessage());
+        } catch (SecurityException e) {
+            return error(403, "AccessDeniedException", e.getMessage());
+        } catch (Exception e) {
+            LOG.errorf("Stop cluster error: %s", e.getMessage());
+            return error(500, "InternalServerException", "Internal server error");
+        }
+    }
+
+    @POST
+    @Path("/{name}/resume")
+    public Response resumeCluster(@PathParam("name") String name, @Context ContainerRequestContext ctx) {
+        try {
+            String callerArn = (String) ctx.getProperty("callerArn");
+            provisioningService.resumeByClusterName(name, callerArn);
+            return Response.accepted().build();
+        } catch (IllegalArgumentException e) {
+            return error(404, "NotFoundException", e.getMessage());
+        } catch (SecurityException e) {
+            return error(403, "AccessDeniedException", e.getMessage());
+        } catch (Exception e) {
+            LOG.errorf("Resume cluster error: %s", e.getMessage());
+            return error(500, "InternalServerException", "Internal server error");
+        }
+    }
+
     private Response error(int status, String code, String message) {
         return Response.status(status).entity(Map.of("__type", code, "message", message)).build();
     }

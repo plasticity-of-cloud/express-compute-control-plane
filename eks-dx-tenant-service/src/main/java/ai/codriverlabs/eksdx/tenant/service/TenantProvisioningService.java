@@ -474,6 +474,36 @@ public class TenantProvisioningService {
         LOG.infof("Resuming tenant %s (instance %s)", tenantId, tenant.instanceId());
     }
 
+    /** Look up tenant state by cluster name (clustersTable PK). */
+    public TenantItem getStateByClusterName(String clusterName) {
+        GetItemResponse resp = dynamoDb.getItem(GetItemRequest.builder()
+            .tableName(clustersTable)
+            .key(Map.of("clusterName", AttributeValue.fromS(clusterName)))
+            .build());
+        if (!resp.hasItem() || resp.item().isEmpty())
+            throw new IllegalArgumentException("Cluster not found: " + clusterName);
+        AttributeValue tenantIdAttr = resp.item().get("tenantId");
+        if (tenantIdAttr == null)
+            throw new IllegalArgumentException("No tenant associated with cluster: " + clusterName);
+        return getState(tenantIdAttr.s());
+    }
+
+    /** Stop a managed cluster by cluster name. Enforces ownership check. */
+    public void stopByClusterName(String clusterName, String callerArn) {
+        TenantItem tenant = getStateByClusterName(clusterName);
+        if (callerArn != null && tenant.ownerArn() != null && !callerArn.equals(tenant.ownerArn()))
+            throw new SecurityException("Not authorized to stop cluster: " + clusterName);
+        stop(tenant.tenantId());
+    }
+
+    /** Resume a stopped managed cluster by cluster name. Enforces ownership check. */
+    public void resumeByClusterName(String clusterName, String callerArn) {
+        TenantItem tenant = getStateByClusterName(clusterName);
+        if (callerArn != null && tenant.ownerArn() != null && !callerArn.equals(tenant.ownerArn()))
+            throw new SecurityException("Not authorized to resume cluster: " + clusterName);
+        resume(tenant.tenantId());
+    }
+
     private void updateState(String tenantId, String state) {
         dynamoDb.updateItem(UpdateItemRequest.builder()
             .tableName(tenantsTable)
