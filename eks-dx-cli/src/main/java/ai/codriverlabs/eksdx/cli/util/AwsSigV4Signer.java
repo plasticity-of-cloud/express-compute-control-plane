@@ -100,15 +100,10 @@ public class AwsSigV4Signer {
     }
 
     /**
-     * Returns cached credentials, refreshing with a timeout if they may be expiring.
-     * Falls back to the cached value on timeout rather than blocking the caller.
+     * Returns cached credentials. Resolved once at create() time; no per-call refresh.
+     * CLI sessions are short-lived so credential expiry mid-session is not a concern.
      */
     private AwsCredentials credentials() {
-        // Try a non-blocking refresh; if it times out, use the cached credentials
-        AwsCredentials fresh = resolveWithTimeout(credentialsProvider, CREDENTIAL_TIMEOUT_SECONDS);
-        if (fresh != null) {
-            cachedCredentials.set(fresh);
-        }
         return cachedCredentials.get();
     }
 
