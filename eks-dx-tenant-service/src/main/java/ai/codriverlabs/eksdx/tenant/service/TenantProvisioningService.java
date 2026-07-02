@@ -454,6 +454,18 @@ public class TenantProvisioningService {
         TenantItem tenant = getState(tenantId);
         if (tenant.instanceId() == null)
             throw new IllegalArgumentException("Tenant has no instance: " + tenantId);
+
+        String instanceState = describeInstanceState(tenant.instanceId());
+        if ("stopped".equals(instanceState) || "stopping".equals(instanceState)) {
+            LOG.infof("Instance %s already %s, nothing to do", tenant.instanceId(), instanceState);
+            updateState(tenantId, instanceState);
+            return;
+        }
+        if ("terminated".equals(instanceState) || "shutting-down".equals(instanceState))
+            throw new IllegalArgumentException("Instance " + tenant.instanceId() + " is " + instanceState + " — cannot stop");
+        if (!"running".equals(instanceState))
+            throw new IllegalArgumentException("Instance " + tenant.instanceId() + " is " + instanceState + " — can only stop a running instance");
+
         boolean isSpot = "spot".equals(tenant.ec2PricingModel());
         ec2.stopInstances(software.amazon.awssdk.services.ec2.model.StopInstancesRequest.builder()
             .instanceIds(tenant.instanceId())
@@ -467,11 +479,30 @@ public class TenantProvisioningService {
         TenantItem tenant = getState(tenantId);
         if (tenant.instanceId() == null)
             throw new IllegalArgumentException("Tenant has no instance: " + tenantId);
+
+        String instanceState = describeInstanceState(tenant.instanceId());
+        if ("running".equals(instanceState) || "pending".equals(instanceState)) {
+            LOG.infof("Instance %s already %s, nothing to do", tenant.instanceId(), instanceState);
+            updateState(tenantId, "running".equals(instanceState) ? "ready" : "resuming");
+            return;
+        }
+        if ("terminated".equals(instanceState) || "shutting-down".equals(instanceState))
+            throw new IllegalArgumentException("Instance " + tenant.instanceId() + " is " + instanceState + " — cannot resume");
+        if (!"stopped".equals(instanceState))
+            throw new IllegalArgumentException("Instance " + tenant.instanceId() + " is " + instanceState + " — can only resume a stopped instance");
+
         ec2.startInstances(software.amazon.awssdk.services.ec2.model.StartInstancesRequest.builder()
             .instanceIds(tenant.instanceId())
             .build());
         updateState(tenantId, "resuming");
         LOG.infof("Resuming tenant %s (instance %s)", tenantId, tenant.instanceId());
+    }
+
+    private String describeInstanceState(String instanceId) {
+        var resp = ec2.describeInstances(r -> r.instanceIds(instanceId));
+        if (resp.reservations().isEmpty() || resp.reservations().getFirst().instances().isEmpty())
+            throw new IllegalArgumentException("Instance not found: " + instanceId);
+        return resp.reservations().getFirst().instances().getFirst().state().nameAsString();
     }
 
     /** Look up tenant state by cluster name (clustersTable PK). */
