@@ -14,7 +14,7 @@
 
   <properties>
     <skipITs>true</skipITs>
-    <josdk-webhooks.version>3.0.3</josdk-webhooks.version>
+    <josdk-webhooks.version>3.0.4</josdk-webhooks.version>
   </properties>
 
   <dependencyManagement>
