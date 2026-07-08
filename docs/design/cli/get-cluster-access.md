@@ -1,4 +1,4 @@
-# Feature: `eks-dx connect-cluster` Command
+# Feature: `eks-dx get-cluster-access` Command
 
 ## Motivation
 
@@ -9,12 +9,12 @@ or after losing the `.pem` file — there is no command to retrieve the connecti
 on demand. They must look up the tenant ID separately and dig through DynamoDB or Lambda
 logs.
 
-`eks-dx connect-cluster <name>` solves this with a single, ergonomic command.
+`eks-dx get-cluster-access <name>` solves this with a single, ergonomic command.
 
 ## Proposed UX
 
 ```
-$ eks-dx connect-cluster my-cluster
+$ eks-dx get-cluster-access my-cluster
   Cluster:    my-cluster
   Public IP:  54.12.34.56
   SSH key:    ~/.eks-d-xpress/tenants/us-east-1/a1b2c3d4.pem
@@ -56,7 +56,7 @@ No backend changes are required. All data is already present:
 ### Call sequence
 
 ```
-eks-dx connect-cluster my-cluster
+eks-dx get-cluster-access my-cluster
   │
   ├── GET /clusters/my-cluster   (provisioning Function URL, SigV4)
   │     → returns TenantItem: tenantId, publicIp, state, managed, sshKeySecretArn
@@ -80,7 +80,7 @@ caller's own AWS credentials (same pattern as other SDK calls in the codebase) �
 
 ## Implementation Notes
 
-- New file: `eks-dx-cli/.../cluster/ConnectClusterCommand.java`
+- New file: `eks-dx-cli/.../cluster/GetClusterAccessCommand.java`
 - Registered in `EksDxCommand.java` subcommand list
 - Follows existing pattern: `@Parameters(index = "0") String name`, inject `EksDxApiClient`
 - Secrets Manager call uses AWS SDK v2 `SecretsManagerClient` — already a dependency in

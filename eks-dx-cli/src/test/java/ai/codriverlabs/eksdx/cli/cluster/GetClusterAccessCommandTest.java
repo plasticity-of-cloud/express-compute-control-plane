@@ -15,14 +15,14 @@ import java.lang.reflect.Method;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for {@link ConnectClusterCommand}.
+ * Unit tests for {@link GetClusterAccessCommand}.
  *
  * The command's network calls (Function URL + Secrets Manager) are exercised
  * by inspecting the JSON payloads and the conditional logic that guards them.
  * End-to-end wiring is covered by the mock-server integration test.
  */
 @ExtendWith(MockitoExtension.class)
-class ConnectClusterCommandTest {
+class GetClusterAccessCommandTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -32,18 +32,18 @@ class ConnectClusterCommandTest {
 
     @Test
     void sshCommand_withKeyPath_includesIdentityFlag() throws Exception {
-        Method m = ConnectClusterCommand.class.getDeclaredMethod("sshCommand", String.class, java.nio.file.Path.class);
+        Method m = GetClusterAccessCommand.class.getDeclaredMethod("sshCommand", String.class, java.nio.file.Path.class);
         m.setAccessible(true);
-        ConnectClusterCommand cmd = new ConnectClusterCommand();
+        GetClusterAccessCommand cmd = new GetClusterAccessCommand();
         String result = (String) m.invoke(cmd, "1.2.3.4", java.nio.file.Path.of("/home/user/.eks-d-xpress/tenants/us-east-1/abc.pem"));
         assertEquals("ssh -i /home/user/.eks-d-xpress/tenants/us-east-1/abc.pem ec2-user@1.2.3.4", result);
     }
 
     @Test
     void sshCommand_withNullKeyPath_omitsIdentityFlag() throws Exception {
-        Method m = ConnectClusterCommand.class.getDeclaredMethod("sshCommand", String.class, java.nio.file.Path.class);
+        Method m = GetClusterAccessCommand.class.getDeclaredMethod("sshCommand", String.class, java.nio.file.Path.class);
         m.setAccessible(true);
-        ConnectClusterCommand cmd = new ConnectClusterCommand();
+        GetClusterAccessCommand cmd = new GetClusterAccessCommand();
         String result = (String) m.invoke(cmd, "5.6.7.8", null);
         assertEquals("ssh ec2-user@5.6.7.8", result);
     }
@@ -134,14 +134,14 @@ class ConnectClusterCommandTest {
         // verify the guard conditions produce the right stderr output by capturing
         // System.err and exercising the condition directly.
         //
-        // The approach: build a ConnectClusterCommand, override `output` to text,
+        // The approach: build a GetClusterAccessCommand, override `output` to text,
         // then manually simulate what run() does after receiving the JSON.
 
         PrintStream original = System.err;
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
         System.setErr(new PrintStream(captured));
 
-        ConnectClusterCommand cmd = new ConnectClusterCommand();
+        GetClusterAccessCommand cmd = new GetClusterAccessCommand();
         try {
             setField(cmd, "name", "test-cluster");
             setField(cmd, "output", "text");
@@ -175,7 +175,7 @@ class ConnectClusterCommandTest {
     }
 
     private void setField(Object target, String name, Object value) throws Exception {
-        Field f = ConnectClusterCommand.class.getDeclaredField(name);
+        Field f = GetClusterAccessCommand.class.getDeclaredField(name);
         f.setAccessible(true);
         f.set(target, value);
     }

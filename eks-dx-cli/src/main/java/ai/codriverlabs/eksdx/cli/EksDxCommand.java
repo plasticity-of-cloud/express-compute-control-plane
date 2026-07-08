@@ -1,7 +1,7 @@
 package ai.codriverlabs.eksdx.cli;
 
 import ai.codriverlabs.eksdx.cli.config.ConfigureCommand;
-import ai.codriverlabs.eksdx.cli.ConnectClusterCmd;
+import ai.codriverlabs.eksdx.cli.GetClusterAccessCmd;
 
 import io.quarkus.picocli.runtime.annotations.TopCommand;
 import picocli.CommandLine.Command;
@@ -22,6 +22,6 @@ import picocli.CommandLine.Command;
         DeleteAssociationCmd.class,
         DescribeAssociationCmd.class,
         ListAssociationsCmd.class,
-        ConnectClusterCmd.class,
+        GetClusterAccessCmd.class,
     })
 public class EksDxCommand {}

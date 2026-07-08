@@ -31,8 +31,8 @@ import java.nio.file.attribute.PosixFilePermissions;
  * <p>Secrets Manager is called directly from the CLI using {@link AwsSigV4Signer}
  * (same HTTP+SigV4 pattern as SSM in EksDxConfig) — no extra SDK dependency.
  */
-@Command(name = "connect-cluster", description = "Show SSH connection details for a managed cluster")
-public class ConnectClusterCommand implements Runnable {
+@Command(name = "get-cluster-access", description = "Show SSH connection details for a managed cluster")
+public class GetClusterAccessCommand implements Runnable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -164,7 +164,7 @@ public class ConnectClusterCommand implements Runnable {
                 if (keyPath == null || !Files.exists(keyPath)) {
                     System.out.println();
                     System.out.println("  SSH key not found locally. Re-fetch it with:");
-                    System.out.printf("  eks-dx connect-cluster %s --save-key%n", name);
+                    System.out.printf("  eks-dx get-cluster-access %s --save-key%n", name);
                 }
             }
         } catch (Exception e) {
