@@ -53,13 +53,14 @@ public class EksDxApiClient {
             if (response.statusCode() >= 400) {
                 String b = response.body();
                 try { var n = new com.fasterxml.jackson.databind.ObjectMapper().readTree(b);
-                    System.err.println(n.has("message") ? n.get("message").asText() : b);
-                } catch (Exception ignored) { System.err.println(b); }
+                    String msg = n.has("message") ? n.get("message").asText() : b;
+                    System.err.println("Error: " + msg);
+                } catch (Exception ignored) { System.err.println("Error: " + b); }
                 System.exit(1);
             }
             return response.body();
         } catch (Exception e) {
-            System.err.printf("Failed to reach provisioning URL: %s%n", e.getMessage());
+            System.err.printf("Error: failed to reach provisioning URL: %s%n", e.getMessage());
             System.exit(1);
             return null;
         }
@@ -75,12 +76,13 @@ public class EksDxApiClient {
             if (response.statusCode() >= 400) {
                 String b = response.body();
                 try { var n = new com.fasterxml.jackson.databind.ObjectMapper().readTree(b);
-                    System.err.println(n.has("message") ? n.get("message").asText() : b);
-                } catch (Exception ignored) { System.err.println(b); }
+                    String msg = n.has("message") ? n.get("message").asText() : b;
+                    System.err.println("Error: " + msg);
+                } catch (Exception ignored) { System.err.println("Error: " + b); }
                 System.exit(1);
             }
         } catch (Exception e) {
-            System.err.printf("Failed to reach Function URL: %s%n", e.getMessage());
+            System.err.printf("Error: failed to reach Function URL: %s%n", e.getMessage());
             System.exit(1);
         }
     }
@@ -217,9 +219,9 @@ public class EksDxApiClient {
                 try {
                     var node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body2);
                     String msg = node.has("message") ? node.get("message").asText() : body2;
-                    System.err.println(msg);
+                    System.err.println("Error: " + msg);
                 } catch (Exception ignored) {
-                    System.err.println(body2);
+                    System.err.println("Error: " + body2);
                 }
                 System.exit(1);
             }

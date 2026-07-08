@@ -1,5 +1,6 @@
 package ai.codriverlabs.eksdx.tenant.resource;
 
+import ai.codriverlabs.eksdx.tenant.exception.ClusterAlreadyExistsException;
 import ai.codriverlabs.eksdx.tenant.model.TenantItem;
 import ai.codriverlabs.eksdx.tenant.service.TenantCryptoService;
 import ai.codriverlabs.eksdx.tenant.service.TenantProvisioningService;
@@ -65,6 +66,8 @@ public class ClusterResource {
             } else {
                 return createManaged(request, ctx, callerArn);
             }
+        } catch (ClusterAlreadyExistsException e) {
+            return error(409, "ResourceInUseException", e.getMessage());
         } catch (IllegalArgumentException e) {
             return error(400, "InvalidParameterException", e.getMessage());
         } catch (Exception e) {

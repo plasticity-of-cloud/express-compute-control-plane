@@ -1,6 +1,7 @@
 package ai.codriverlabs.eksdx.tenant.service;
 
 import ai.codriverlabs.eksdx.tenant.TenantNaming;
+import ai.codriverlabs.eksdx.tenant.exception.ClusterAlreadyExistsException;
 import ai.codriverlabs.eksdx.tenant.model.TenantItem;
 import ai.codriverlabs.eksdx.tenant.model.TenantProgress;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -9,6 +10,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
@@ -16,7 +18,6 @@ import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScanResponse;
 import software.amazon.awssdk.services.dynamodb.model.Select;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.CreateKeyPairRequest;
@@ -130,6 +131,13 @@ public class TenantProvisioningService {
     public String provision(String clusterName, boolean managed, String idcUserId, String ownerArn,
                             String arch, String ec2PricingModel, String k8sVersion,
                             boolean assignElasticIp, int diskSizeGb, String sshCidr) {
+        // Fail fast: check uniqueness before creating any AWS resources.
+        // For managed mode this is critical — without it the stack creates subnets, IAM
+        // roles, EC2, etc. before hitting DynamoDB, all of which need rolling back.
+        if (clusterExists(clusterName)) {
+            throw new ClusterAlreadyExistsException(clusterName);
+        }
+
         String createdAt = Instant.now().toString();
         String tenantId = tenantIdGenerator.generate(idcUserId, createdAt);
 
@@ -758,6 +766,23 @@ public class TenantProvisioningService {
         };
     }
 
+    // -------------------------------------------------------------------------
+    // Cluster existence check
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns true if a cluster record with the given name already exists in DynamoDB.
+     * Uses a projection to read only the key — no wasted capacity on attribute data.
+     */
+    boolean clusterExists(String clusterName) {
+        GetItemResponse resp = dynamoDb.getItem(GetItemRequest.builder()
+            .tableName(clustersTable)
+            .key(Map.of("clusterName", AttributeValue.fromS(clusterName)))
+            .projectionExpression("clusterName")
+            .build());
+        return resp.hasItem() && !resp.item().isEmpty();
+    }
+
     private void preRegisterCluster(String tenantId, String clusterName, TenantCryptoService.CryptoResult crypto) {
         Map<String, AttributeValue> item = Map.of(
             "clusterName", AttributeValue.fromS(clusterName),
@@ -767,7 +792,17 @@ public class TenantProvisioningService {
             "managed", AttributeValue.fromS("true"),
             "createdAt", AttributeValue.fromS(Instant.now().toString())
         );
-        dynamoDb.putItem(PutItemRequest.builder().tableName(clustersTable).item(item).build());
+        try {
+            dynamoDb.putItem(PutItemRequest.builder()
+                .tableName(clustersTable)
+                .item(item)
+                // Belt-and-suspenders: atomic guard against concurrent create-cluster calls
+                // racing past the upfront clusterExists() check above.
+                .conditionExpression("attribute_not_exists(clusterName)")
+                .build());
+        } catch (ConditionalCheckFailedException e) {
+            throw new ClusterAlreadyExistsException(clusterName);
+        }
         LOG.infof("Pre-registered cluster %s with JWKS in DynamoDB", clusterName);
     }
 
@@ -780,6 +815,11 @@ public class TenantProvisioningService {
      * Stores cluster record with user-provided JWKS and issuer.
      */
     public String registerSelfManagedCluster(String clusterName, String issuer, String jwks, String ownerArn) {
+        // Fail fast: check uniqueness before touching DynamoDB.
+        if (clusterExists(clusterName)) {
+            throw new ClusterAlreadyExistsException(clusterName);
+        }
+
         String tenantId = tenantIdGenerator.generate(ownerArn, Instant.now().toString());
 
         Map<String, AttributeValue> clusterItem = new HashMap<>();
@@ -790,7 +830,16 @@ public class TenantProvisioningService {
         clusterItem.put("ownerArn", AttributeValue.fromS(ownerArn));
         clusterItem.put("managed", AttributeValue.fromS("false"));
         clusterItem.put("createdAt", AttributeValue.fromS(Instant.now().toString()));
-        dynamoDb.putItem(PutItemRequest.builder().tableName(clustersTable).item(clusterItem).build());
+        try {
+            dynamoDb.putItem(PutItemRequest.builder()
+                .tableName(clustersTable)
+                .item(clusterItem)
+                // Belt-and-suspenders: atomic guard against concurrent registrations.
+                .conditionExpression("attribute_not_exists(clusterName)")
+                .build());
+        } catch (ConditionalCheckFailedException e) {
+            throw new ClusterAlreadyExistsException(clusterName);
+        }
 
         // Also write tenant record for consistency
         writeInitialRecord(tenantId, clusterName, false, ownerArn, ownerArn, Instant.now().toString(), null, null, null);

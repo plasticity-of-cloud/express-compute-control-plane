@@ -1,6 +1,7 @@
 package ai.codriverlabs.eksdx.tenant.service;
 
 import ai.codriverlabs.eksdx.tenant.model.TenantItem;
+import ai.codriverlabs.eksdx.tenant.exception.ClusterAlreadyExistsException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,11 +31,17 @@ class TenantProvisioningServiceTest {
         service = new TenantProvisioningService();
         setField("dynamoDb", dynamoDb);
         setField("tenantsTable", "eks-dx-tenants");
+        setField("clustersTable", "eks-dx-clusters");
         setField("tenantIdGenerator", new TenantIdGenerator());
         // maxTenantsPerCaller
         Field quota = TenantProvisioningService.class.getDeclaredField("maxTenantsPerCaller");
         quota.setAccessible(true);
         quota.setInt(service, 5);
+
+        // Default: cluster name does not exist (empty GetItemResponse).
+        // Individual tests that need a specific getItem response override this.
+        lenient().when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().build());
     }
 
     // -------------------------------------------------------------------------
@@ -66,7 +73,11 @@ class TenantProvisioningServiceTest {
         service.provision("my-k3s", false, "user@example.com", "arn:aws:iam::123:role/dev",
             null, null, null, false, 0, null);
 
-        // Only DynamoDB putItem — no EC2, IAM, Secrets Manager calls
+        // Only DynamoDB calls expected:
+        //   getItem  — clusterExists() uniqueness check
+        //   putItem  — writeInitialRecord()
+        // No EC2, IAM, Secrets Manager, STS or other service calls.
+        verify(dynamoDb, times(1)).getItem(any(GetItemRequest.class));
         verify(dynamoDb, times(1)).putItem(any(PutItemRequest.class));
         verifyNoMoreInteractions(dynamoDb);
     }
@@ -134,6 +145,100 @@ class TenantProvisioningServiceTest {
             .thenReturn(ScanResponse.builder().count(3).build());
 
         assertEquals(3, service.countTenantsByOwner("arn:aws:iam::123:role/dev"));
+    }
+
+    // -------------------------------------------------------------------------
+    // clusterExists
+    // -------------------------------------------------------------------------
+
+    @Test
+    void clusterExists_returnsFalse_whenNotFound() {
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().build()); // empty → not found
+
+        assertFalse(service.clusterExists("no-such-cluster"));
+    }
+
+    @Test
+    void clusterExists_returnsTrue_whenFound() {
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder()
+                .item(Map.of("clusterName", AttributeValue.fromS("existing-cluster")))
+                .build());
+
+        assertTrue(service.clusterExists("existing-cluster"));
+    }
+
+    // -------------------------------------------------------------------------
+    // provision — duplicate cluster name (unmanaged path)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void provision_unmanaged_duplicateClusterName_throwsClusterAlreadyExistsException() {
+        // First GetItem call (clusterExists check) returns an existing record
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder()
+                .item(Map.of("clusterName", AttributeValue.fromS("my-k3s")))
+                .build());
+
+        ClusterAlreadyExistsException ex = assertThrows(
+            ClusterAlreadyExistsException.class,
+            () -> service.provision("my-k3s", false, "user@example.com",
+                "arn:aws:iam::123:role/dev", null, null, null, false, 0, null));
+
+        assertEquals("my-k3s", ex.getClusterName());
+        assertTrue(ex.getMessage().contains("my-k3s"));
+        assertTrue(ex.getMessage().contains("eks-dx delete-cluster my-k3s"),
+            "Exception message must guide user to delete-cluster");
+        // No putItem must have been called — fail fast, zero writes
+        verify(dynamoDb, never()).putItem(any(PutItemRequest.class));
+    }
+
+    @Test
+    void provision_unmanaged_newClusterName_proceedsNormally() {
+        // First GetItem (clusterExists check) returns empty → new cluster
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().build());
+
+        assertDoesNotThrow(() ->
+            service.provision("brand-new", false, "user@example.com",
+                "arn:aws:iam::123:role/dev", null, null, null, false, 0, null));
+
+        verify(dynamoDb, atLeastOnce()).putItem(any(PutItemRequest.class));
+    }
+
+    // -------------------------------------------------------------------------
+    // registerSelfManagedCluster — duplicate cluster name
+    // -------------------------------------------------------------------------
+
+    @Test
+    void registerSelfManagedCluster_duplicateClusterName_throwsClusterAlreadyExistsException() {
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder()
+                .item(Map.of("clusterName", AttributeValue.fromS("k3s-prod")))
+                .build());
+
+        ClusterAlreadyExistsException ex = assertThrows(
+            ClusterAlreadyExistsException.class,
+            () -> service.registerSelfManagedCluster(
+                "k3s-prod", "https://k8s.example.com", "{\"keys\":[]}", "arn:aws:iam::123:role/dev"));
+
+        assertEquals("k3s-prod", ex.getClusterName());
+        verify(dynamoDb, never()).putItem(any(PutItemRequest.class));
+    }
+
+    @Test
+    void registerSelfManagedCluster_newClusterName_writesRecords() {
+        // clusterExists check returns empty
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().build());
+
+        String tenantId = service.registerSelfManagedCluster(
+            "new-k3s", "https://k8s.example.com", "{\"keys\":[]}", "arn:aws:iam::123:role/dev");
+
+        assertNotNull(tenantId);
+        // Expects 2 putItem calls: cluster record + tenant record
+        verify(dynamoDb, times(2)).putItem(any(PutItemRequest.class));
     }
 
     // -------------------------------------------------------------------------
