@@ -253,6 +253,49 @@ ssh -i ~/.eks-d-xpress/tenants/us-east-1/<tenant-id>.pem ec2-user@<tenant-ip> \
 The script reads env vars from `/opt/eks-d/version.env` and `/opt/eks-d/cluster.env`, picks up the chart from `/opt/eks-d-setup/charts/`, and runs `helm upgrade --install` with the correct cluster identity values.
 
 
+## Feature and Bug-Fix Workflow
+
+All changes — whether features or bug fixes — follow the same lifecycle:
+
+1. **Document first on `main`**: Before writing any code, add documentation to the appropriate location:
+   - New features: create a design doc in `docs/design/` (see naming convention below)
+   - Bug fixes: add a note to the relevant design doc or create a short doc in `docs/design/fixes/`
+   - Update `docs/architecture.md` or the relevant user guide if the change is user-facing
+   - Commit the doc to `main` so the intent is recorded before any implementation diverges
+
+2. **Create a feature branch**: Branch from `main` immediately after the doc commit:
+   ```bash
+   git checkout -b feature/<short-description>   # new features
+   git checkout -b fix/<short-description>        # bug fixes
+   ```
+
+3. **Write tests first (TDD preferred)**:
+   - Add unit tests in the relevant module's `src/test/` tree
+   - Add integration tests where applicable (DynamoDB Local, Quarkus `@QuarkusTest`)
+   - Tests must cover both the happy path and the failure/edge cases introduced by the change
+
+4. **Implement the code change** with tests passing locally:
+   ```bash
+   ./build-local.sh --only <module> --skip-tests  # compile check
+   mvn test -pl <module>                           # run tests
+   ```
+
+5. **Full build must be green before merge** — this is a hard gate, not a guideline:
+   ```bash
+   ./build-local.sh --skip-tests   # all modules compile
+   mvn test                         # all tests pass
+   ```
+   A PR to `main` is only considered when both commands exit 0. No merge is permitted if any test fails or the build does not compile cleanly.
+
+6. **Merge to `main`** via PR (no direct push to `main`). The implementation branch is **never** merged until the build gate in step 5 passes.
+
+### Doc naming conventions
+
+- `docs/design/<service-area>/my-feature.md` (lowercase-hyphenated)
+- Never `SCREAMING_CASE.md` — convert to lowercase on creation
+
+---
+
 ## Java 25 Development Best Practices
 
 - **Constants over inline strings**: All resource name prefixes, path prefixes, and repeated string literals must be declared as `static final` constants in a dedicated class (e.g., `TenantNaming`). Never inline magic strings like `"eks-dx-tenant-"` directly in business logic.
