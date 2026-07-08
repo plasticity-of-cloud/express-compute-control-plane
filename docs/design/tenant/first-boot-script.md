@@ -1,8 +1,9 @@
 # EKS-D-Xpress First-Boot Script Design
 
-Reference for implementing the first-boot script bundled in the EKS-D-Xpress AMI
-(`ecp-eks-dx-infra`). This script runs once on first boot, driven by `cloud-init`
-or a `systemd` one-shot unit.
+Reference for the first-boot script bundled in the EKS-D-Xpress Golden AMI.
+The script lives in the **`eks-d-xpress`** project (AMI build pipeline), not in this
+repo. This document describes the design contract between the AMI and the control plane.
+This script runs once on first boot, driven by a `systemd` one-shot unit.
 
 ## Progress reporting
 

@@ -22,7 +22,7 @@ This creates multiple security and reliability concerns:
 
 ## Proposed Solution
 
-Replace direct DynamoDB writes with **SQS FIFO queue**. The EC2 instance sends progress messages to the queue; tenant-service Lambda (already running, serving the SSE stream) polls the queue and validates before persisting.
+Replace direct DynamoDB writes with a **per-tenant SQS FIFO queue**. The EC2 instance sends progress messages to its dedicated queue; tenant-service Lambda (already running, serving the SSE stream) polls the queue, validates before persisting, and deletes the queue once provisioning reaches a terminal state.
 
 ### Architecture
 
@@ -32,8 +32,8 @@ EC2 (progress.sh)
   │ sqs:SendMessage (MessageGroupId = tenantId)
   │ MessageDeduplicationId = tenantId + progress (5-min dedup window)
   │
-  └──→ SQS FIFO Queue (eks-d-xpress-progress.fifo)
-         │
+  └──→ SQS FIFO Queue (eks-dx-tenant-<tenantId>-progress.fifo)
+         │                         ← per-tenant, ephemeral (~5-10 min lifetime)
          │ ReceiveMessage (polled by SSE Lambda during stream)
          │
          └──→ Tenant-service Lambda (SSE endpoint)
@@ -42,11 +42,26 @@ EC2 (progress.sh)
                 ├── Validate: progress only goes forward?
                 ├── Validate: message schema correct?
                 │
-                └── dynamodb:UpdateItem (if valid)
-                      └── Stream SSE event to client
+                ├── dynamodb:UpdateItem (if valid)
+                │     └── Stream SSE event to client
+                │
+                └── On terminal state ("ready" | "failed"):
+                      └── DeleteQueue (immediate cleanup)
 ```
 
-### Why SQS (not EventBridge or SNS)
+### Why Per-Tenant Queues (Not Shared)
+
+A shared FIFO queue has two correctness issues that per-tenant queues eliminate:
+
+1. **Cross-tenant message stealing** — SQS FIFO does not support filtering `ReceiveMessage` by `MessageGroupId`. With a shared queue, Lambda A (streaming tenant-1) receives messages for tenant-2 and tenant-3, making them invisible for the visibility timeout period. This delays progress reporting for other tenants by up to 30 seconds per stolen message.
+
+2. **IAM scoping impossible on shared queue** — `sqs:MessageGroupId` is not a valid IAM condition key. A scoped STS token for a shared queue cannot restrict which `MessageGroupId` the holder writes to. A compromised instance could spoof progress for other tenants.
+
+Per-tenant queues solve both: IAM restricts `sqs:SendMessage` to the specific queue ARN, and each Lambda only receives messages for its own tenant.
+
+**Queue count is not a concern** — AWS has no hard limit on number of SQS queues per account/region.
+
+### Why SQS (Not EventBridge or SNS)
 
 The SSE endpoint Lambda is already running (serving the long-lived streaming response). It needs to actively **poll** for progress updates during the stream. EventBridge and SNS are push-based — they invoke targets but cannot be polled by a running function.
 
@@ -64,77 +79,92 @@ The SSE endpoint Lambda is already running (serving the long-lived streaming res
 | Instance spams queue | FIFO deduplication (same tenantId + progress value = dropped within 5 min) |
 | Instance sends invalid state | Lambda validates state transitions before persisting |
 | Instance sends progress backward | Lambda rejects if new progress ≤ current progress |
-| Instance writes after completion | Lambda ignores messages for tenants in terminal state (`ready`, `failed`) |
-| Instance writes to other tenants | MessageGroupId = tenantId enforced; scoped STS token restricts SendMessage to own tenantId |
-| Long-lived credential abuse | STS token expires after 15 minutes (natural revocation); no instance profile SQS access |
+| Instance writes after completion | Queue deleted on terminal state — SendMessage returns error |
+| Instance writes to other tenants | Per-tenant queue + IAM scoped to queue ARN — impossible |
+| Credential abuse after provisioning | Queue deleted = hard revocation; permission targets non-existent resource |
 
-### Scoped STS Token (Time-Limited, Single-Tenant)
+### Queue Lifecycle
 
-The tenant-service Lambda generates a short-lived STS token before launching EC2 and stores it in Secrets Manager. The instance fetches it at boot and uses it exclusively for progress reporting.
+```
+┌─ Provisioning Lambda ─────────────────────────────────────────────────────┐
+│  1. Delete queue if exists (idempotent — handles retry/crash recovery)     │
+│  2. CreateQueue: eks-dx-tenant-<tenantId>-progress.fifo                   │
+│     - ContentBasedDeduplication: false (explicit dedup IDs)                │
+│     - MessageRetentionPeriod: 3600 (1 hour)                               │
+│     - VisibilityTimeout: 10                                               │
+│     - Tag: createdAt=<ISO timestamp>                                      │
+│     - Tag: eks-dx-tenant=<tenantId>                                       │
+│  3. Generate scoped STS token (sqs:SendMessage on this queue ARN)         │
+│  4. Store token in Secrets Manager                                        │
+│  5. Launch EC2                                                            │
+└───────────────────────────────────────────────────────────────────────────┘
 
-**Token generation (tenant-service Lambda, before EC2 launch):**
+┌─ SSE Lambda (streaming) ──────────────────────────────────────────────────┐
+│  Phase 1: Poll EC2 DescribeInstances (unchanged)                          │
+│  Phase 2: Poll SQS ReceiveMessage every 5s                                │
+│           Validate → persist to DynamoDB → stream SSE event               │
+│  Terminal: state == "ready" OR state == "failed"                           │
+│           → DeleteQueue immediately                                       │
+└───────────────────────────────────────────────────────────────────────────┘
+
+┌─ Crash Recovery ──────────────────────────────────────────────────────────┐
+│  If provisioning Lambda is re-invoked for the same tenant (retry after    │
+│  crash), it deletes the existing queue first, then creates a fresh one.   │
+│  This ensures no stale messages from a prior attempt are consumed.        │
+└───────────────────────────────────────────────────────────────────────────┘
+
+┌─ Defensive Cleanup (belt-and-suspenders) ─────────────────────────────────┐
+│  Deprovision path: if queue still exists (SSE Lambda crashed before       │
+│  reaching terminal state), delete it during tenant deprovision.           │
+│  Optional: scheduled Lambda (hourly) deletes progress queues with         │
+│  createdAt tag > 1 hour.                                                  │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+### Queue Naming
+
+```
+eks-dx-tenant-<tenantId>-progress.fifo
+```
+
+Follows existing `TenantNaming` convention. Add to `TenantNaming.java`:
 
 ```java
-AssumeRoleResponse sts = stsClient.assumeRole(AssumeRoleRequest.builder()
-    .roleArn("arn:aws:iam::<account>:role/eks-d-xpress-progress-sender")
-    .roleSessionName("tenant-" + tenantId)
-    .durationSeconds(900)  // 15 minutes (STS minimum)
-    .policy("""
-        {
-          "Version": "2012-10-17",
-          "Statement": [{
-            "Effect": "Allow",
-            "Action": "sqs:SendMessage",
-            "Resource": "arn:aws:sqs:<region>:<account>:eks-d-xpress-progress.fifo",
-            "Condition": {
-              "StringEquals": { "sqs:MessageGroupId": "%s" }
-            }
-          }]
-        }
-        """.formatted(tenantId))
-    .build());
-
-// Store in Secrets Manager alongside PKI material
-secretsManager.createSecret(CreateSecretRequest.builder()
-    .name("eks-dx/tenant/" + tenantId + "/progress-token")
-    .secretString(toJson(sts.credentials()))
-    .build());
+public static String progressQueueName(String tenantId) {
+    return RESOURCE_PREFIX + tenantId + "-progress.fifo";
+}
 ```
+
+### Instance Profile Direct Access (No STS Token Needed)
+
+The per-tenant instance profile role includes `sqs:SendMessage` scoped to the tenant's own progress queue ARN. No STS token ceremony is required — the queue's ephemeral nature is the revocation mechanism.
+
+**Why no scoped STS token:**
+- Per-tenant queue ARN is deterministic and can be referenced in IAM before the queue exists
+- Once provisioning completes, the queue is deleted — permission becomes useless
+- Instance cannot create queues (no `sqs:CreateQueue`), cannot write to other tenants' queues (ARN-scoped)
+- Queue deletion is immediate, unconditional hard revocation — stronger than token expiry
 
 **Instance boot (progress.sh):**
 
 ```bash
-# Fetch scoped STS token (valid 15 min from provisioning start)
-PROGRESS_CREDS=$(aws secretsmanager get-secret-value \
-  --secret-id "eks-dx/tenant/${TENANT_ID}/progress-token" \
-  --query SecretString --output text)
-
-export AWS_ACCESS_KEY_ID=$(echo "$PROGRESS_CREDS" | jq -r .accessKeyId)
-export AWS_SECRET_ACCESS_KEY=$(echo "$PROGRESS_CREDS" | jq -r .secretAccessKey)
-export AWS_SESSION_TOKEN=$(echo "$PROGRESS_CREDS" | jq -r .sessionToken)
-
-# All sqs:SendMessage calls use the scoped token, not the instance profile
+# Instance profile already has sqs:SendMessage on this tenant's queue — just send directly
 aws sqs send-message --queue-url "$PROGRESS_QUEUE_URL" \
   --message-group-id "$TENANT_ID" \
   --message-deduplication-id "${TENANT_ID}-${progress}" \
-  --message-body '{"tenantId":"...","state":"...","phase":"...","progress":N}'
+  --message-body '{"tenantId":"'"$TENANT_ID"'","state":"'"$state"'","phase":"'"$phase"'","progress":'"$progress"'}'
 ```
 
 **Security properties:**
-- Token is scoped to a single SQS queue + single MessageGroupId (tenantId)
-- Token expires 15 minutes after provisioning starts — no revocation needed
-- Instance profile has NO SQS access (only Secrets Manager read for initial fetch)
-- If boot takes >15 min, progress reporting stops (acceptable — timeout → mark failed)
-- After provisioning completes, Lambda stops consuming from that group; token expires shortly after
-
-**Why Secrets Manager (not user-data):**
-- User-data is visible in EC2 console and instance metadata — credentials would be exposed
-- Secrets Manager is encrypted, access-logged, and already fetched at boot for PKI material
-- Same instance profile permission (`secretsmanager:GetSecretValue` on `eks-dx/tenant/<id>/*`) covers both PKI and progress token
+- Instance profile scoped to `arn:aws:sqs:<region>:<account>:eks-dx-tenant-<tenantId>-progress.fifo`
+- Cannot write to any other queue (ARN mismatch)
+- Cannot create or delete queues (no `sqs:CreateQueue`/`sqs:DeleteQueue`)
+- Queue deleted on provisioning completion — instant hard revocation
+- No secrets to manage, no token expiry to worry about, no credential fetch at boot
 
 ### IAM Scoping
 
-Instance profile (minimal — no SQS, no DynamoDB):
+Instance profile (per-tenant role, created by `TenantIamService`):
 
 ```json
 {
@@ -143,27 +173,17 @@ Instance profile (minimal — no SQS, no DynamoDB):
       "Effect": "Allow",
       "Action": "secretsmanager:GetSecretValue",
       "Resource": "arn:aws:secretsmanager:<region>:<account>:secret:eks-dx/tenant/<tenantId>/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "sqs:SendMessage",
+      "Resource": "arn:aws:sqs:<region>:<account>:eks-dx-tenant-<tenantId>-progress.fifo"
     }
   ]
 }
 ```
 
-The instance profile only needs Secrets Manager read. The SQS write capability comes entirely from the scoped STS token stored in Secrets Manager.
-
-Dedicated role for STS assumption (`eks-d-xpress-progress-sender`):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": "sqs:SendMessage",
-    "Resource": "arn:aws:sqs:<region>:<account>:eks-d-xpress-progress.fifo"
-  }]
-}
-```
-
-The session policy (passed at AssumeRole time) further restricts to the specific tenantId's MessageGroupId.
+The `sqs:SendMessage` permission targets a queue that only exists during provisioning (~5-10 min). Once the SSE Lambda deletes it, the permission is inert. No DynamoDB write access needed.
 
 ### Message Schema
 
@@ -186,60 +206,84 @@ Current (DynamoDB polling):
 while (streaming) {
     TenantItem item = dynamoDb.getItem(...);  // polls DynamoDB
     if (item.progress() > lastProgress) sendSseEvent(item);
-    Thread.sleep(1000);
+    Thread.sleep(5000);
 }
 ```
 
 Proposed (SQS polling):
 ```java
+String queueUrl = sqs.getQueueUrl(r -> r.queueName(TenantNaming.progressQueueName(tenantId))).queueUrl();
+int lastProgress = 0;
+
 while (streaming) {
     var messages = sqs.receiveMessage(ReceiveMessageRequest.builder()
-        .queueUrl(progressQueueUrl)
-        .messageGroupId(tenantId)  // Note: FIFO doesn't support this filter — see below
+        .queueUrl(queueUrl)
         .maxNumberOfMessages(10)
-        .waitTimeSeconds(1)
+        .waitTimeSeconds(5)  // long polling — replaces Thread.sleep
         .build()).messages();
-    
+
     for (var msg : messages) {
         ProgressEvent event = parse(msg.body());
-        if (event.tenantId().equals(tenantId) && validate(event)) {
-            persistAndStream(event);
-            sqs.deleteMessage(...);
+        if (validate(event, lastProgress)) {
+            persistToDynamoDb(event);
+            lastProgress = event.progress();
+            emitSseEvent(event);
         }
+        sqs.deleteMessage(r -> r.queueUrl(queueUrl).receiptHandle(msg.receiptHandle()));
+    }
+
+    if (lastState is terminal) {
+        sqs.deleteQueue(r -> r.queueUrl(queueUrl));
+        break;
     }
 }
 ```
 
-**Note:** SQS FIFO doesn't support filtering ReceiveMessage by MessageGroupId. The Lambda receives all available messages and filters in code. At expected scale (<10 concurrent provisioning tenants), this is acceptable. For higher scale, consider per-tenant temporary queues.
+### Validation Rules
 
-### Queue Lifecycle
+The SSE Lambda validates each message before persisting:
 
-- **Single shared FIFO queue** created by CDK: `eks-d-xpress-progress.fifo`
-- Queue has `ContentBasedDeduplication: false` (explicit deduplication IDs)
-- Retention: 1 hour (progress messages are ephemeral)
-- Visibility timeout: 30 seconds
-- The queue persists across tenant lifecycles — no per-tenant creation/deletion
+```java
+boolean validate(ProgressEvent event, int currentProgress) {
+    // 1. Schema: required fields present
+    if (event.tenantId() == null || event.state() == null || event.progress() < 0) return false;
+
+    // 2. Progress only goes forward
+    if (event.progress() <= currentProgress) return false;
+
+    // 3. Valid state transitions
+    return switch (event.state()) {
+        case "provisioning", "booting", "pulling-key",
+             "kubeadm-init", "kubeadm-done", "registering" -> true;
+        case "ready", "failed" -> true;  // terminal states
+        default -> false;
+    };
+}
+```
 
 ### Changes Required
 
 | Component | Change |
 |-----------|--------|
-| `TenantIamService` | Remove `dynamodb:UpdateItem` from instance profile; add `sqs:SendMessage` scoped to progress queue + own MessageGroupId |
-| `eks-d-xpress` → `progress.sh` | Replace `aws dynamodb update-item` with `aws sqs send-message --queue-url ... --message-group-id $TENANT_ID --message-body '{"tenantId":"...","state":"...","phase":"...","progress":N}'` |
-| `TenantStreamResource` (SSE) | Replace DynamoDB GetItem polling with SQS ReceiveMessage polling + validation |
-| CDK stack | Add SQS FIFO queue resource; pass queue URL as env var to tenant-service Lambda |
-| `TenantProvisioningService` | Write initial state to DynamoDB (as today); progress updates come via SQS |
+| `TenantNaming` | Add `progressQueueName(tenantId)` |
+| `TenantProvisioningService` | Create per-tenant FIFO queue (delete-first for idempotency) before EC2 launch |
+| `TenantIamService` | Remove `dynamodb:UpdateItem`; add `sqs:SendMessage` scoped to tenant's progress queue ARN |
+| `TenantStreamResource` (SSE) | Replace DynamoDB GetItem polling with SQS ReceiveMessage; delete queue on terminal state |
+| Deprovision path | Delete progress queue if still exists (defensive) |
+| Rollback path | Delete progress queue in `ProvisionedResources` rollback |
+| `eks-d-xpress` → `progress.sh` | Replace `aws dynamodb update-item` with `aws sqs send-message` using instance profile creds directly |
 
 ### Migration Path
 
-1. Deploy queue + Lambda changes (consumer side)
-2. Update instance profile IAM (add SQS, keep DynamoDB temporarily)
-3. Update `progress.sh` in Golden AMI (producer side)
-4. Remove DynamoDB write permission from instance profile
-5. New AMI build picks up the change; old instances still work during transition (DynamoDB write still allowed until step 4)
+1. Deploy CDK changes (progress-sender role, Lambda role update)
+2. Deploy tenant-service Lambda (consumer: SQS polling + queue lifecycle)
+3. Update instance profile IAM (keep DynamoDB temporarily for old AMIs)
+4. Update `progress.sh` in Golden AMI (producer: SQS send)
+5. New AMI build picks up the change; old instances still work during transition
+6. Remove DynamoDB write permission from instance profile (once all active instances use new AMI)
 
 ## References
 
 - `docs/roadmap/implemented/control-plane-managed-oidc-jwks.md` — related: instance profile scoping
 - `docs/roadmap/security-hardening/ssm-only-access.md` — related: reducing instance attack surface
-- `eks-d-xpress` project: `eks-d-setup/progress.sh` — current DynamoDB write implementation
+- `eks-d-xpress` project: `eks-d-setup/progress.sh` — current DynamoDB write implementation (to be migrated)
