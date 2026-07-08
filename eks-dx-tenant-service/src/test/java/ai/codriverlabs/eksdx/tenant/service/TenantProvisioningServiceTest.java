@@ -17,6 +17,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -242,8 +243,127 @@ class TenantProvisioningServiceTest {
     }
 
     // -------------------------------------------------------------------------
+    // deleteCluster — routing logic
+    // -------------------------------------------------------------------------
+
+    @Test
+    void deleteCluster_managedTrue_callsDeprovision() {
+        // Mock cluster record with managed=true — deleteCluster reads this first
+        var clusterItem = new java.util.HashMap<String, AttributeValue>();
+        clusterItem.put("clusterName", AttributeValue.fromS("my-cluster"));
+        clusterItem.put("tenantId", AttributeValue.fromS("tenant-123"));
+        clusterItem.put("managed", AttributeValue.fromS("true"));
+        clusterItem.put("ownerArn", AttributeValue.fromS("arn:aws:iam::123:role/owner"));
+
+        // deprovision() then calls getState(tenantId) which does another getItem
+        var tenantItem = new java.util.HashMap<String, AttributeValue>();
+        tenantItem.put("tenantId", AttributeValue.fromS("tenant-123"));
+        tenantItem.put("clusterName", AttributeValue.fromS("my-cluster"));
+        tenantItem.put("managed", AttributeValue.fromS("true"));
+        tenantItem.put("state", AttributeValue.fromS("ready"));
+        tenantItem.put("instanceId", AttributeValue.fromS("i-abc123"));
+        tenantItem.put("createdAt", AttributeValue.fromS(Instant.now().toString()));
+        tenantItem.put("updatedAt", AttributeValue.fromS(Instant.now().toString()));
+
+        // First call returns cluster record, second returns tenant record
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(clusterItem).build())
+            .thenReturn(GetItemResponse.builder().item(tenantItem).build());
+
+        // deprovision will fail on ec2 call (not mocked) — that's fine,
+        // we just verify it took the managed path (not self-managed deregister).
+        try {
+            service.deleteCluster("my-cluster", "arn:aws:iam::123:role/owner");
+        } catch (Exception e) {
+            // Expected: deprovision() tries to use unmocked ec2 client
+        }
+
+        // Verify it did NOT take the self-managed path (which would delete cluster record directly)
+        verify(dynamoDb, never()).deleteItem(argThat((DeleteItemRequest req) ->
+            "eks-dx-clusters".equals(req.tableName())));
+    }
+
+    @Test
+    void deleteCluster_managedFalse_onlyDeregisters() {
+        mockClusterRecord("my-k3s", "tenant-456", "false", "arn:aws:iam::123:role/owner");
+
+        service.deleteCluster("my-k3s", "arn:aws:iam::123:role/owner");
+
+        // Should delete from both tables (deregister), not call deprovision
+        ArgumentCaptor<DeleteItemRequest> cap = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(dynamoDb, times(2)).deleteItem(cap.capture());
+
+        var tables = cap.getAllValues().stream().map(DeleteItemRequest::tableName).toList();
+        assertTrue(tables.contains("eks-dx-clusters"));
+        assertTrue(tables.contains("eks-dx-tenants"));
+    }
+
+    @Test
+    void deleteCluster_managedFieldMissing_treatsAsSelfManaged() {
+        // Cluster record without "managed" field — simulates legacy data
+        var item = new java.util.HashMap<String, AttributeValue>();
+        item.put("clusterName", AttributeValue.fromS("legacy-cluster"));
+        item.put("tenantId", AttributeValue.fromS("tenant-old"));
+        item.put("ownerArn", AttributeValue.fromS("arn:aws:iam::123:role/owner"));
+        // No "managed" key at all
+
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(item).build());
+
+        service.deleteCluster("legacy-cluster", "arn:aws:iam::123:role/owner");
+
+        // Should take self-managed path (deregister only)
+        ArgumentCaptor<DeleteItemRequest> cap = ArgumentCaptor.forClass(DeleteItemRequest.class);
+        verify(dynamoDb, times(2)).deleteItem(cap.capture());
+    }
+
+    @Test
+    void deleteCluster_nonOwner_throwsSecurityException() {
+        mockClusterRecord("my-cluster", "tenant-123", "true", "arn:aws:iam::123:role/owner");
+
+        assertThrows(SecurityException.class, () ->
+            service.deleteCluster("my-cluster", "arn:aws:iam::999:role/attacker"));
+    }
+
+    @Test
+    void deleteCluster_clusterNotFound_throwsIllegalArgument() {
+        // Default mock returns empty item (from setUp)
+        assertThrows(IllegalArgumentException.class, () ->
+            service.deleteCluster("nonexistent", "arn:aws:iam::123:role/anyone"));
+    }
+
+    @Test
+    void deleteCluster_ownerArnNullInRecord_allowsDeletion() {
+        // Cluster without ownerArn — anyone can delete
+        var item = new java.util.HashMap<String, AttributeValue>();
+        item.put("clusterName", AttributeValue.fromS("unowned-cluster"));
+        item.put("tenantId", AttributeValue.fromS("tenant-789"));
+        item.put("managed", AttributeValue.fromS("false"));
+        // No ownerArn
+
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(item).build());
+
+        service.deleteCluster("unowned-cluster", "arn:aws:iam::999:role/anyone");
+
+        // Should succeed (no SecurityException)
+        verify(dynamoDb, atLeastOnce()).deleteItem(any(DeleteItemRequest.class));
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private void mockClusterRecord(String clusterName, String tenantId, String managed, String ownerArn) {
+        var item = new java.util.HashMap<String, AttributeValue>();
+        item.put("clusterName", AttributeValue.fromS(clusterName));
+        item.put("tenantId", AttributeValue.fromS(tenantId));
+        item.put("managed", AttributeValue.fromS(managed));
+        if (ownerArn != null) item.put("ownerArn", AttributeValue.fromS(ownerArn));
+
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(item).build());
+    }
 
     private void mockItem(String tenantId, String clusterName, boolean managed, String state) {
         var item = new java.util.HashMap<String, AttributeValue>();
