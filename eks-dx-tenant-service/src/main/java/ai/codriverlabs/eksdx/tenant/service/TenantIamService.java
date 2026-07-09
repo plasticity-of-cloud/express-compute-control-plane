@@ -326,7 +326,7 @@ public class TenantIamService {
                 region, clusterName,               // KarpenterTagInstances
                 region, region, clusterName,       // KarpenterDelete
                 accountId, tenantId,               // KarpenterPassRole
-                region, accountId, clusterName,    // KarpenterSQS
+                region, accountId, TenantNaming.queueName(tenantId), // KarpenterSQS
                 clusterName                        // CloudProviderWriteTagged
             );
     }

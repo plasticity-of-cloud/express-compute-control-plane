@@ -200,10 +200,10 @@ public class TenantProvisioningService {
             created.progressQueueUrl = progressQueueUrl;
 
             // 7. SQS + EventBridge (Karpenter interruption handling)
-            String queueArn = createInterruptionQueue(clusterName, region, accountId);
+            String queueArn = createInterruptionQueue(tenantId, region, accountId);
             created.queueUrl = queueArn;
-            createEventBridgeRules(clusterName, queueArn);
-            created.eventBridgeRulePrefix = clusterName;
+            createEventBridgeRules(tenantId, queueArn);
+            created.eventBridgeRulePrefix = tenantId;
 
             // 8. DLM (daily etcd backup)
             dlmService.createEtcdBackupPolicy(tenantId, clusterName, region);
@@ -626,10 +626,13 @@ public class TenantProvisioningService {
         }
 
         // 2. Remove cluster registration from eks-dx-clusters table
-        dynamoDb.deleteItem(DeleteItemRequest.builder()
-            .tableName(clustersTable)
-            .key(Map.of("clusterName", AttributeValue.fromS(tenantId)))
-            .build());
+        if (tenant.clusterName() != null) {
+            dynamoDb.deleteItem(DeleteItemRequest.builder()
+                .tableName(clustersTable)
+                .key(Map.of("clusterName", AttributeValue.fromS(tenant.clusterName())))
+                .build());
+            LOG.infof("Deleted cluster registration %s", tenant.clusterName());
+        }
 
         // 3. Delete secrets
         deleteSecretIfExists("eks-d-xpress/tenant/" + tenantId + "/signing-key");
@@ -668,11 +671,10 @@ public class TenantProvisioningService {
         }
 
         // 6. Delete EventBridge rules + SQS queues (interruption + progress)
-        String clusterName = "eks-d-xpress-" + tenantId;
-        try { deleteEventBridgeRules(clusterName); } catch (Exception e) {
+        try { deleteEventBridgeRules(tenantId); } catch (Exception e) {
             LOG.warnf("Could not delete EventBridge rules for %s: %s", tenantId, e.getMessage());
         }
-        try { deleteInterruptionQueue(clusterName); } catch (Exception e) {
+        try { deleteInterruptionQueue(tenantId); } catch (Exception e) {
             LOG.warnf("Could not delete SQS queue for %s: %s", tenantId, e.getMessage());
         }
         // Progress queue — normally deleted by SSE Lambda on completion, but defensive cleanup here
@@ -709,7 +711,7 @@ public class TenantProvisioningService {
         }
 
         // 7. Delete DLM policy
-        try { dlmService.deleteEtcdBackupPolicy(tenantId, clusterName); } catch (Exception e) {
+        try { dlmService.deleteEtcdBackupPolicy(tenantId, tenant.clusterName()); } catch (Exception e) {
             LOG.warnf("Could not delete DLM policy for %s: %s", tenantId, e.getMessage());
         }
 

@@ -55,3 +55,4 @@ __pycache__/
 
 # Robot Framework UAT output
 tests/uat/output/
+internal/
