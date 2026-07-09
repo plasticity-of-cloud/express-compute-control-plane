@@ -433,9 +433,11 @@ public class EksDXpressControlPlaneStack extends Stack {
                 "dlm:TagResource"))
             .resources(List.of("*"))
             .build());
-        // SQS: Karpenter interruption queue
+        // SQS: Karpenter interruption queue + per-tenant progress FIFO queue
         tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of("sqs:CreateQueue", "sqs:DeleteQueue", "sqs:GetQueueUrl"))
+            .actions(List.of(
+                "sqs:CreateQueue", "sqs:DeleteQueue", "sqs:GetQueueUrl",
+                "sqs:TagQueue", "sqs:ReceiveMessage", "sqs:DeleteMessage"))
             .resources(List.of(String.format("arn:aws:sqs:%s:%s:eks-dx-tenant-*",
                 Stack.of(this).getRegion(), Stack.of(this).getAccount())))
             .build());
