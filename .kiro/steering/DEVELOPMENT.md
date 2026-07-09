@@ -255,45 +255,107 @@ The script reads env vars from `/opt/eks-d/version.env` and `/opt/eks-d/cluster.
 
 ## Feature and Bug-Fix Workflow
 
-All changes — whether features or bug fixes — follow the same lifecycle:
+All changes — whether features or bug fixes — follow the same lifecycle. **No exceptions.** The AI assistant (Kiro) must follow this workflow for every code change and must never merge to `main` directly.
 
-1. **Document first on `main`**: Before writing any code, add documentation to the appropriate location:
-   - New features: create a design doc in `docs/design/` (see naming convention below)
-   - Bug fixes: add a note to the relevant design doc or create a short doc in `docs/design/fixes/`
-   - Update `docs/architecture.md` or the relevant user guide if the change is user-facing
-   - Commit the doc to `main` so the intent is recorded before any implementation diverges
+### 1. Document first on `main`
 
-2. **Create a feature branch**: Branch from `main` immediately after the doc commit:
-   ```bash
-   git checkout -b feature/<short-description>   # new features
-   git checkout -b fix/<short-description>        # bug fixes
-   ```
+Before writing any code, add documentation to the appropriate location:
+- New features: create a design doc in `docs/design/` (see naming convention below)
+- Bug fixes: add a note to the relevant design doc or create a short doc in `docs/design/fixes/`
+- Update `docs/architecture.md` or the relevant user guide if the change is user-facing
+- Commit the doc to `main` so the intent is recorded before any implementation diverges
 
-3. **Write tests first (TDD preferred)**:
-   - Add unit tests in the relevant module's `src/test/` tree
-   - Add integration tests where applicable (DynamoDB Local, Quarkus `@QuarkusTest`)
-   - Tests must cover both the happy path and the failure/edge cases introduced by the change
+### 2. Create a feature branch
 
-4. **Implement the code change** with tests passing locally:
-   ```bash
-   ./build-local.sh --only <module> --skip-tests  # compile check
-   mvn test -pl <module>                           # run tests
-   ```
+Branch from `main` immediately after the doc commit:
+```bash
+git checkout -b feature/<short-description>   # new features
+git checkout -b fix/<short-description>        # bug fixes
+```
 
-5. **Full build must be green before merge** — this is a hard gate, not a guideline:
-   ```bash
-   ./build-local.sh --skip-tests   # all modules compile
-   mvn test                         # all tests pass
-   ```
-   A PR to `main` is only considered when both commands exit 0. No merge is permitted if any test fails or the build does not compile cleanly.
+For changes spanning multiple repositories, use the **same branch name** across all repos.
 
-6. **Push the feature branch to origin before merging**:
-   ```bash
-   git push origin fix/<short-description>
-   ```
-   The remote branch is the audit trail — it links to PR comments, CI runs, and review history. Never delete it from origin. Local deletion is fine.
+### 3. Write tests first (TDD preferred)
 
-7. **Merge to `main`** via PR (no direct push to `main`). The implementation branch is **never** merged until the build gate in step 5 passes.
+- Add unit tests in the relevant module's `src/test/` tree
+- Add integration tests where applicable (DynamoDB Local, Quarkus `@QuarkusTest`)
+- Add UAT tests if the change is user-facing and testable end-to-end (see `tests/uat/`)
+- Tests must cover:
+  - Happy path
+  - Failure/edge cases introduced by the change
+  - State transitions and boundary conditions
+  - Authorization and ownership checks where applicable
+
+### 4. Implement the code change
+
+Build and test incrementally:
+```bash
+./build-local.sh --only <module> --skip-tests  # compile check
+mvn test -pl <module>                           # run module tests
+```
+
+### 5. Commit incrementally and push to remote
+
+Each logical stepping stone gets its own commit **and push**. Do not accumulate all changes into a single commit. Push after each commit so the remote branch always reflects current progress:
+
+```bash
+git add <specific files>
+git commit -m "<type>: <concise description>"
+git push -u origin feature/<short-description>
+```
+
+Commit types: `feat`, `fix`, `test`, `docs`, `refactor`, `chore`
+
+Example commit sequence for a feature:
+1. `feat: add progress queue creation and lifecycle`
+2. `feat: update IAM policy for SQS access`
+3. `feat: rewrite SSE streaming to poll SQS`
+4. `test: add unit tests for SQS validation logic`
+
+### 6. Full build must be green — hard gate
+
+Before requesting a PR, **both commands must exit 0**:
+```bash
+./build-local.sh --skip-tests   # all modules compile
+mvn test                         # all tests pass
+```
+
+No PR is created if any test fails or the build does not compile cleanly.
+
+### 7. Create PR — never merge directly
+
+```bash
+# Push final state
+git push origin feature/<short-description>
+
+# Create PR (do NOT merge)
+```
+
+**The assistant must stop here and present the PR for human review.** Never merge to `main` automatically. The PR description should include:
+- Summary of changes
+- What was tested (unit, integration, UAT)
+- Any follow-up items or cross-repo dependencies
+
+### 8. Post-merge cleanup
+
+After the human merges the PR:
+- Local branch deletion is fine
+- Never delete the remote branch from origin — it's the audit trail
+
+---
+
+### Hard Rules for the AI Assistant
+
+| Rule | Rationale |
+|------|-----------|
+| Never push directly to `main` | All changes go through PR review |
+| Never merge a PR autonomously | Human approval required |
+| Every code change needs a feature/fix branch | Isolation and traceability |
+| Every branch must have passing tests before PR | Build gate is not optional |
+| Push to remote after every commit | Remote branch is the audit trail |
+| Same branch name across repos for cross-repo changes | Links related work |
+| Document first, code second | Intent is recorded before implementation diverges |
+| Tests are mandatory, not optional | Unit tests minimum; integration/UAT when achievable |
 
 ### Doc naming conventions
 
