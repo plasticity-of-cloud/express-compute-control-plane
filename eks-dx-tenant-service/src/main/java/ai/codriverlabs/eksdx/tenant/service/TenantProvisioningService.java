@@ -538,6 +538,30 @@ public class TenantProvisioningService {
             .build());
         updateState(tenantId, "resuming");
         LOG.infof("Resuming tenant %s (instance %s)", tenantId, tenant.instanceId());
+
+        // Wait for the instance to reach running state, then mark ready
+        try {
+            ec2.waiter().waitUntilInstanceRunning(r -> r.instanceIds(tenant.instanceId()));
+            LOG.infof("Instance %s is running", tenant.instanceId());
+
+            // Refresh public IP (may change on stop/start for non-EIP instances)
+            var desc = ec2.describeInstances(r -> r.instanceIds(tenant.instanceId()));
+            var instance = desc.reservations().getFirst().instances().getFirst();
+            String publicIp = instance.publicIpAddress();
+            if (publicIp != null) {
+                dynamoDb.updateItem(UpdateItemRequest.builder()
+                    .tableName(tenantsTable)
+                    .key(Map.of("tenantId", AttributeValue.fromS(tenantId)))
+                    .updateExpression("SET publicIp = :ip")
+                    .expressionAttributeValues(Map.of(":ip", AttributeValue.fromS(publicIp)))
+                    .build());
+            }
+            updateState(tenantId, "ready");
+            LOG.infof("Tenant %s resumed successfully", tenantId);
+        } catch (Exception e) {
+            LOG.errorf("Failed waiting for instance %s to start: %s", tenant.instanceId(), e.getMessage());
+            updateState(tenantId, "ready"); // instance was started, mark ready even if waiter timed out
+        }
     }
 
     private String describeInstanceState(String instanceId) {
