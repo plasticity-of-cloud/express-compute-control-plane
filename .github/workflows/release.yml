@@ -55,21 +55,14 @@ jobs:
       - name: Build and push container images
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          for MODULE in eks-dx-auth-proxy eks-dx-pod-identity-webhook; do
-            mvn -B -pl ${MODULE} package -DskipTests \
+          for MODULE in eks-dx-auth-proxy eks-dx-pod-identity-webhook eks-dx-karpenter-support; do
+            mvn -B -pl ${MODULE} package -DskipTests -Pnative \
               -Dquarkus.container-image.build=true \
               -Dquarkus.container-image.push=true \
               -Dquarkus.container-image.registry=ghcr.io \
               -Dquarkus.container-image.group=${{ github.repository_owner }} \
               -Dquarkus.container-image.tag=${VERSION}-${{ matrix.arch }}
           done
-          # karpenter-support: native image
-          mvn -B -pl eks-dx-karpenter-support package -DskipTests -Pnative \
-            -Dquarkus.container-image.build=true \
-            -Dquarkus.container-image.push=true \
-            -Dquarkus.container-image.registry=ghcr.io \
-            -Dquarkus.container-image.group=${{ github.repository_owner }} \
-            -Dquarkus.container-image.tag=${VERSION}-${{ matrix.arch }}
 
       - name: Build CLI native binary
         run: |
