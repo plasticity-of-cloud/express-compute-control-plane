@@ -1,73 +1,126 @@
-# Interfaces
+# Interfaces and APIs
+
+## REST APIs
+
+### Credential Exchange (Data Plane)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/clusters/{name}/assets` | None (token in body) | Exchange SA token for AWS credentials |
+
+**Request**: `AgentRequest { ClusterName, Token }`
+**Response**: `AgentResponse { Subject, Association, AssumedRoleUser, Credentials }`
+
+### Cluster Management (Control Plane — mgmt-service)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/clusters` | IAM SigV4 | Register a self-managed cluster |
+| `GET` | `/clusters` | IAM SigV4 | List clusters (owned by caller) |
+| `GET` | `/clusters/{name}` | IAM SigV4 | Describe cluster |
+| `DELETE` | `/clusters/{name}` | IAM SigV4 | Deregister cluster |
+| `POST` | `/clusters/{name}/refresh-jwks` | IAM SigV4 | Refresh JWKS cache |
+
+### Association Management (Control Plane — mgmt-service)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/clusters/{name}/pod-identity-associations` | IAM SigV4 | Create association |
+| `GET` | `/clusters/{name}/pod-identity-associations` | IAM SigV4 | List associations |
+| `GET` | `/clusters/{name}/pod-identity-associations/{id}` | IAM SigV4 | Describe association |
+| `DELETE` | `/clusters/{name}/pod-identity-associations/{id}` | IAM SigV4 | Delete association |
+
+### Unified Cluster Lifecycle (tenant-service)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/clusters` | IAM SigV4 | Create cluster (managed or self-managed) |
+| `GET` | `/clusters/{name}` | IAM SigV4 | Get cluster state |
+| `DELETE` | `/clusters/{name}` | IAM SigV4 | Delete cluster |
+| `POST` | `/clusters/{name}/stop` | IAM SigV4 | Hibernate cluster |
+| `POST` | `/clusters/{name}/resume` | IAM SigV4 | Resume cluster |
+
+### Tenant Provisioning (tenant-service — legacy)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/tenants` | IAM SigV4 | Create tenant |
+| `GET` | `/tenants/{id}` | IAM SigV4 | Get tenant state |
+| `DELETE` | `/tenants/{id}` | IAM SigV4 | Delete tenant |
+
+### SSE Progress Stream (tenant-service Function URL)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/tenants/{id}/stream` | IAM SigV4 | Server-sent events progress |
+
+## Kubernetes APIs (Webhooks)
+
+### Pod Identity Webhook
+
+- **Type**: Mutating Admission Webhook
+- **Resource**: `pods` (CREATE)
+- **Action**: Injects `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN` env vars + projected SA token volume
+
+### EC2NodeClass Webhook (Karpenter Support)
+
+- **Type**: Mutating Admission Webhook
+- **Resource**: `ec2nodeclasses.karpenter.sh` (CREATE, UPDATE)
+- **Action**: Rewrites `amiFamily` to `Custom`, injects userData (MIME merge), adds cluster tags
+
+## Internal Service Interfaces
+
+### TokenValidationService (auth-proxy)
+
+```java
+TokenClaims validateToken(String token)
+// Performs K8s TokenReview, returns claims (namespace, sa, pod, uid, sessionTags)
+```
+
+### JwksTokenValidationService (credential-service)
+
+```java
+TokenClaims validateToken(String clusterName, String token)
+// Validates JWT against DynamoDB-cached JWKS, returns claims
+```
+
+### TenantProvisioningService
+
+```java
+String provision(String clusterName, TenantItem item)     // Full provisioning
+void deprovision(String tenantId)                         // Full teardown
+void rollback(ProvisionedResources resources)             // Compensating cleanup
+TenantItem getState(String tenantId)                      // Current state
+```
+
+### TenantNaming (Constants API)
+
+```java
+static String roleName(String tenantId)
+static String instanceProfileName(String tenantId)
+static String securityGroupName(String tenantId)
+static String keyPairName(String tenantId)
+static String secretPath(String tenantId)
+static String queueName(String tenantId)
+static String progressQueueName(String tenantId)
+static String eventRuleName(String tenantId)
+static String dlmRoleName(String tenantId)
+```
 
 ## CLI Commands
 
-All commands use positional cluster name (AWS CLI style):
-
 ```
-eks-dx create-cluster <name> [--arch arm64|x86_64] [--pricing spot|ondemand] [--wait]
-eks-dx create-cluster <name> --jwks-file <path> --issuer <url>   (self-managed)
-eks-dx delete-cluster <name>
-eks-dx stop-cluster <name>
-eks-dx resume-cluster <name>
+eks-dx create-cluster <name> [--wait] [--managed|--unmanaged]
+eks-dx delete-cluster <name> [--wait]
 eks-dx describe-cluster <name>
 eks-dx list-clusters
-eks-dx create-association --cluster-name <c> --namespace <ns> --service-account <sa> --role-arn <arn>
-eks-dx delete-association --cluster-name <c> --association-id <id>
-eks-dx describe-association --cluster-name <c> --association-id <id>
-eks-dx list-associations --cluster-name <c>
-eks-dx configure [--endpoint <url>] [--region <r>]
+eks-dx update-cluster <name> [--refresh-jwks]
+eks-dx stop-cluster <name>
+eks-dx resume-cluster <name>
+eks-dx get-cluster-access <name>
+eks-dx create-association --cluster <name> --namespace <ns> --service-account <sa> --role-arn <arn>
+eks-dx delete-association --cluster <name> --id <id>
+eks-dx describe-association --cluster <name> --id <id>
+eks-dx list-associations --cluster <name> [--namespace <ns>]
+eks-dx configure
 ```
-
-## Tenant Service REST API (Function URL)
-
-| Method | Path | Mode | Description |
-|--------|------|------|-------------|
-| POST | `/clusters` | Both | Create cluster (server infers mode from `jwks` field presence) |
-| DELETE | `/clusters/{name}` | Both | Delete cluster (managed=full teardown, self-managed=remove record) |
-| POST | `/tenants` | Managed | Legacy: provision tenant (still supported) |
-| GET | `/tenants/{id}` | — | Get tenant state |
-| DELETE | `/tenants/{id}` | — | Deprovision tenant |
-| POST | `/tenants/{id}/stop` | — | Hibernate instance |
-| POST | `/tenants/{id}/resume` | — | Resume instance |
-| GET | `/tenants/{id}/stream` | — | SSE progress stream |
-
-### POST /clusters Request Body
-
-```json
-// Managed (no jwks → full provisioning)
-{"clusterName": "my-cluster", "arch": "arm64", "ec2PricingModel": "spot", "diskSizeGb": 20}
-
-// Self-managed (jwks present → register only)
-{"clusterName": "my-k3s", "jwks": "{\"keys\":[...]}", "issuer": "https://..."}
-```
-
-## Mgmt Service REST API (API Gateway, IAM auth)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/clusters` | List clusters |
-| GET | `/clusters/{name}` | Describe cluster |
-| PUT | `/clusters/{name}/jwks` | Refresh JWKS |
-| DELETE | `/clusters/{name}` | Deregister cluster |
-| POST | `/clusters/{name}/pod-identity-associations` | Create association |
-| GET | `/clusters/{name}/pod-identity-associations` | List associations |
-| GET | `/clusters/{name}/pod-identity-associations/{id}` | Describe association |
-| DELETE | `/clusters/{name}/pod-identity-associations/{id}` | Delete association |
-
-## Credential Service REST API (API Gateway, no auth)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/clusters/{name}/assets` | Exchange token for AWS credentials |
-
-## SSM Parameter Contract
-
-| Parameter | Written by | Read by |
-|-----------|-----------|---------|
-| `/eks-d-xpress/infra/launch-template/{arch}/{pricing}` | Shared infra CDK | tenant-service |
-| `/eks-d-xpress/infra/ami/{arch}/{k8s-version}` | AMI pipeline | tenant-service |
-| `/eks-d-xpress/infra/network/vpc-id` | Shared infra CDK | tenant-service |
-| `/eks-d-xpress/control-plane/api/endpoint` | Control plane CDK | CLI, EC2 boot |
-| `/eks-d-xpress/control-plane/api/stream-url` | Control plane CDK | CLI |
-| `/eks-d-xpress/control-plane/api/provisioning-url` | Control plane CDK | CLI |

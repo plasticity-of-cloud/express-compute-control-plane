@@ -2,7 +2,7 @@
 
 ## Directory Overview
 
-Multi-module Quarkus 3.36+ / Java 25 project. Brings EKS Pod Identity to non-EKS Kubernetes clusters (EKS-D, k3s, microk8s) through a serverless Lambda backend with KMS-backed PKI, composable tenant provisioning, and compensating rollback.
+Multi-module Quarkus 3.37+ / Java 25 project. Brings EKS Pod Identity to non-EKS Kubernetes clusters (EKS-D, k3s, microk8s) through a serverless Lambda backend with KMS-backed PKI, composable tenant provisioning, and compensating rollback.
 
 ```
 eks-dx-credential-service/   # Lambda: credential exchange (hot path, SnapStart)
@@ -28,11 +28,14 @@ docs/                        # Architecture docs, design, roadmap, user guides
 | PKI generation (KMS-signed CA) | `eks-dx-tenant-service/.../service/TenantCryptoService.java` |
 | Resource naming constants | `eks-dx-tenant-service/.../TenantNaming.java` |
 | Credential exchange endpoint | `eks-dx-credential-service/.../resource/EksAuthResource.java` |
+| Trust policy management | `eks-dx-mgmt-service/.../service/TrustPolicyService.java` |
 | CLI entry point | `eks-dx-cli/.../EksDxCommand.java` |
 | CLI unified create-cluster | `eks-dx-cli/.../cluster/UnifiedCreateClusterCommand.java` |
 | CDK stack | `infra/.../EksDXpressControlPlaneStack.java` |
 | In-cluster proxy | `eks-dx-auth-proxy/.../resource/EksAuthAgentResource.java` |
 | Pod mutation logic | `eks-dx-pod-identity-webhook/.../PodIdentityMutator.java` |
+| Karpenter EC2NodeClass webhook | `eks-dx-karpenter-support/.../resource/Ec2NodeClassWebhookResource.java` |
+| Karpenter reconciler | `eks-dx-karpenter-support/.../reconciler/Ec2NodeClassReconciler.java` |
 
 ## Authentication Model
 
@@ -62,6 +65,14 @@ docs/                        # Architecture docs, design, roadmap, user guides
 **DynamoDB key design**: Associations use `PK=CLUSTER#<name>` / `SK=<namespace>#<serviceAccount>`. O(1) GetItem for credential exchange.
 
 **Shared infra naming**: Route tables are `eks-dx-infra-public-rt` / `eks-dx-infra-private-rt`. Platform tag for shared infra: `Platform=eks-d-xpress`. Per-tenant resources use `eks-dx-tenant-` prefix.
+
+**Karpenter webhook patterns**: `Ec2NodeClassWebhookResource` rewrites `amiFamily` to `Custom`, injects cluster-specific userData (MIME merge for AL2023/Bottlerocket), and adds required tags. Idempotent — skips mutation when already applied. `Ec2NodeClassReconciler` sets `ValidationSucceeded` status condition using generation-based conflict detection.
+
+## CI/CD
+
+- **CI** (`ci.yml`): Push/PR to main. Temurin Java 25, `mvn verify`, CDK synth, container image builds (no push), Helm lint. Integration tests with DynamoDB Local.
+- **Release** (`release.yml`): Triggered by `v*` tags. Multi-arch matrix (amd64 + arm64). Native CLI binaries, Lambda zips, container images pushed to GHCR.
+- **Deploy Lambda** (`deploy-lambda.yml`): Targeted Lambda deployment.
 
 ## Build
 

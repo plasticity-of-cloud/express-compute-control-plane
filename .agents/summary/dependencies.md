@@ -1,50 +1,93 @@
 # Dependencies
 
-## AWS Services
+## Core Framework
 
-| Service | Used by | Purpose |
-|---------|---------|---------|
-| DynamoDB | credential, mgmt, tenant | Cluster registry, associations, tenant state |
-| STS | credential, tenant | AssumeRole (credentials), GetCallerIdentity (account) |
-| IAM | tenant | Create/delete tenant roles + instance profiles |
-| EC2 | tenant | Launch/terminate instances, subnets, SGs, EIPs |
-| KMS | tenant | Sign CA certificates (asymmetric RSA-2048) |
-| Secrets Manager | tenant | Store CA key, SA key, SSH key per tenant |
-| SQS | tenant | Karpenter interruption queue per cluster |
-| EventBridge | tenant | Spot interruption / rebalance event rules |
-| DLM | tenant | Daily etcd volume snapshot policies |
-| SSM Parameter Store | CDK, tenant, CLI | Configuration interface between stacks |
-| Lambda | all | Compute runtime |
-| API Gateway | credential, mgmt | REST API with IAM auth |
-| CloudWatch Logs | all | Logging |
+| Dependency | Version | Usage |
+|-----------|---------|-------|
+| Quarkus BOM | 3.37.1 | Application framework, DI, REST, Lambda |
+| Quarkus Amazon Services BOM | 3.37.1 | AWS SDK integrations |
 
-## Java Libraries
+## AWS SDK v2
 
-| Library | Module | Purpose |
-|---------|--------|---------|
-| Quarkus 3.36+ | all | Application framework, DI, REST, Lambda integration |
-| AWS SDK v2 | all | EC2, IAM, STS, DynamoDB, KMS, SM, SQS, Events, DLM, SSM |
-| Bouncy Castle (bcpkix-jdk18on 1.84) | tenant | X.509 cert construction, KMS ContentSigner |
-| Fabric8 Kubernetes Client | auth-proxy | TokenReview API calls |
-| Jackson | all | JSON serialization |
-| Picocli | cli | Command-line parsing |
-| SmallRye JWT | credential, mgmt | JWT/JWKS validation |
-| Lambda Web Adapter | tenant | Bridges HTTP server to Lambda streaming Runtime API |
+| Module | Service | Used By |
+|--------|---------|---------|
+| `software.amazon.awssdk:sts` | AWS STS | credential-service (AssumeRole) |
+| `software.amazon.awssdk:dynamodb` | DynamoDB | credential, mgmt, tenant services |
+| `software.amazon.awssdk:ec2` | EC2 | tenant-service (launch, EIP, SG, subnet) |
+| `software.amazon.awssdk:iam` | IAM | tenant-service (roles, policies) |
+| `software.amazon.awssdk:kms` | KMS | tenant-service (CA cert signing) |
+| `software.amazon.awssdk:sqs` | SQS | tenant-service (progress + interruption queues) |
+| `software.amazon.awssdk:secretsmanager` | Secrets Manager | tenant-service (SSH keys, PKI storage) |
+| `software.amazon.awssdk:cloudwatchevents` | EventBridge | tenant-service (spot interruption rules) |
+| `software.amazon.awssdk:dlm` | DLM | tenant-service (etcd backup policies) |
+| `software.amazon.awssdk:ssm` | SSM | CLI (parameter resolution) |
 
-## Build Tools
+## Security & Crypto
+
+| Dependency | Usage |
+|-----------|-------|
+| `org.bitbucket.b_c:jose4j` | JWT/JWKS validation (credential + mgmt services) |
+| `org.bouncycastle:bcpkix-jdk18on` | X.509 certificate generation (tenant-service) |
+
+## Kubernetes
+
+| Dependency | Usage |
+|-----------|-------|
+| `io.fabric8:kubernetes-client` | TokenReview (auth-proxy), K8s API (karpenter-support) |
+| `io.fabric8:generator-annotations` | CRD model generation (karpenter-support) |
+
+## Infrastructure
+
+| Dependency | Usage |
+|-----------|-------|
+| `software.amazon.awscdk:aws-cdk-lib` | CDK stack definition (infra module) |
+| `software.constructs:constructs` | CDK construct base (infra module) |
+
+## CLI
+
+| Dependency | Usage |
+|-----------|-------|
+| `info.picocli:picocli` | Command-line parsing (eks-dx CLI) |
+
+## Build & Native
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Java | 25 | Runtime (GraalVM JDK for native) |
-| Maven | 3.9+ | Build system |
-| Docker | — | Native builds via Mandrel container |
-| AWS CDK | 2.260+ | Infrastructure deployment |
+| Maven Surefire | 3.5.6 | Test execution |
+| Maven Compiler | 3.15.0 | Java 25 compilation |
+| Mandrel Builder | JDK 25 | GraalVM native image builds |
 
-## Container Images
+## Test Dependencies
 
-| Image | Purpose | Registry |
-|-------|---------|----------|
-| eks-dx-auth-proxy | In-cluster proxy | GHCR / ECR |
-| eks-dx-pod-identity-webhook | Admission webhook | GHCR / ECR |
-| eks-dx-karpenter-support | EC2NodeClass webhook + reconciler | ECR |
-| eks-pod-identity-agent | AWS DaemonSet (169.254.170.23) | ECR (602401143452) |
+| Dependency | Usage |
+|-----------|-------|
+| `io.quarkus:quarkus-junit5` | Quarkus test framework |
+| `io.rest-assured:rest-assured` | REST API testing |
+| `org.mockito:mockito-core` | Mocking |
+| Robot Framework | UAT acceptance tests |
+| Python mock server | HTTP mock for CLI tests |
+
+## External Services (Runtime)
+
+```mermaid
+graph LR
+    subgraph "AWS Services Used"
+        STS[AWS STS]
+        DDB[DynamoDB]
+        EC2[EC2]
+        IAM[IAM]
+        KMS[KMS]
+        SQS[SQS]
+        SM[Secrets Manager]
+        EB[EventBridge]
+        DLM[DLM]
+        SSM[SSM Parameter Store]
+        APIGW[API Gateway]
+        Lambda[Lambda]
+    end
+
+    subgraph "External"
+        K8s[Kubernetes API]
+        GHCR[GitHub Container Registry]
+    end
+```

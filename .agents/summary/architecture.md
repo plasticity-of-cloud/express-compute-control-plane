@@ -2,73 +2,95 @@
 
 ## System Overview
 
-EKS-DX brings EKS Pod Identity to non-EKS Kubernetes clusters through a serverless Lambda backend. Three Lambdas handle credential exchange, cluster management, and tenant provisioning.
+EKS-DX brings EKS Pod Identity (`AssumeRoleForPodIdentity`) to non-EKS Kubernetes clusters (EKS-D, k3s, microk8s) through a centralized serverless backend with DynamoDB storage and KMS-backed PKI.
 
 ```mermaid
 graph TB
-    subgraph "Kubernetes Cluster (EKS-D / k3s / microk8s)"
-        Pod --> Agent[eks-pod-identity-agent]
-        Agent --> Proxy[eks-dx-auth-proxy]
-        Webhook[eks-dx-pod-identity-webhook] -.->|mutates| Pod
+    subgraph "Tenant Cluster"
+        Pod[Pod with SA Token]
+        Agent[Pod Identity Agent]
+        Proxy[eks-dx-auth-proxy]
+        Webhook[Pod Identity Webhook]
+        Karpenter[Karpenter Support]
     end
 
-    subgraph "AWS (Serverless)"
-        Proxy -->|TokenReview + forward| CredSvc[credential-service Lambda]
-        CLI[eks-dx CLI] -->|SigV4| TenantFnUrl[Tenant Function URL]
-        TenantFnUrl --> TenantSvc[tenant-service Lambda]
-        CLI -->|SigV4| APIGW[API Gateway]
-        APIGW --> MgmtSvc[mgmt-service Lambda]
-        CredSvc --> DDB[(DynamoDB)]
-        MgmtSvc --> DDB
-        TenantSvc --> DDB
-        TenantSvc --> EC2[EC2 Instance]
-        TenantSvc --> SM[Secrets Manager]
-        TenantSvc --> KMS[KMS CA Key]
-        CredSvc --> STS[STS AssumeRole]
+    subgraph "AWS Control Plane"
+        APIGW[API Gateway]
+        CredSvc[credential-service<br/>SnapStart Lambda]
+        MgmtSvc[mgmt-service<br/>Lambda]
+        TenantSvc[tenant-service<br/>Native Lambda]
+        DDB[(DynamoDB)]
+        STS[AWS STS]
+        KMS[AWS KMS]
     end
+
+    Pod -->|SA Token| Agent
+    Agent -->|Forward| Proxy
+    Proxy -->|1. TokenReview| K8sAPI[K8s API Server]
+    Proxy -->|2. Forward token| APIGW
+    APIGW --> CredSvc
+    CredSvc -->|3. JWKS validate| DDB
+    CredSvc -->|4. Lookup association| DDB
+    CredSvc -->|5. AssumeRole| STS
+    Webhook -->|Inject env+volume| Pod
+
+    MgmtSvc --> DDB
+    TenantSvc --> DDB
+    TenantSvc --> KMS
 ```
 
-## Credential Exchange Flow
+## Architectural Layers
 
 ```mermaid
-sequenceDiagram
-    participant Pod
-    participant Proxy as eks-dx-auth-proxy
-    participant K8s as kube-apiserver
-    participant Lambda as credential-service
-    participant DDB as DynamoDB
-    participant STS as AWS STS
+graph LR
+    subgraph "Data Plane (hot path)"
+        A[credential-service]
+    end
+    subgraph "Control Plane"
+        B[mgmt-service]
+        C[tenant-service]
+    end
+    subgraph "In-Cluster"
+        D[auth-proxy]
+        E[pod-identity-webhook]
+        F[karpenter-support]
+    end
+    subgraph "Client"
+        G[eks-dx CLI]
+    end
 
-    Pod->>Proxy: POST / (token in body)
-    Proxy->>K8s: TokenReview (fast-fail)
-    K8s-->>Proxy: authenticated (namespace, SA, claims)
-    Proxy->>Lambda: Forward via API Gateway
-    Lambda->>DDB: GetItem (CLUSTER#name / ns#sa → roleArn)
-    Lambda->>Lambda: JWKS validation (jose4j, cached 5min)
-    Lambda->>STS: AssumeRole (session tags from claims)
-    STS-->>Lambda: Temporary credentials
-    Lambda-->>Proxy: Credentials response
-    Proxy-->>Pod: AWS credentials
+    G -->|SigV4| B
+    G -->|SigV4| C
+    D -->|Open| A
 ```
 
-## Deployment Topology
+## Design Principles
 
-| Component | Runtime | Memory | Timeout | Auth |
-|-----------|---------|--------|---------|------|
-| credential-service | JVM (SnapStart) | 512MB | 30s | None (token-validated) |
-| mgmt-service | JVM | 256MB | 30s | IAM SigV4 (API GW) |
-| tenant-service | JVM or native arm64 | 256-512MB | 900s | IAM SigV4 (Function URL) |
-| eks-dx-auth-proxy | Container (in-cluster) | — | — | K8s ServiceAccount |
-| eks-dx-pod-identity-webhook | Container (in-cluster) | — | — | cert-manager TLS |
+1. **Hot-path isolation**: Credential exchange (data plane) is separated from management operations. The credential-service uses SnapStart for cold-start latency optimization.
 
-## PKI Trust Hierarchy (Managed Mode)
+2. **Composable provisioning with compensating rollback**: Tenant provisioning is decomposed into discrete service calls (network, crypto, IAM, SQS, DLM, EC2). `ProvisionedResources` tracks created resources; on failure, `rollback()` cleans up in reverse order.
 
-```mermaid
-graph TD
-    KMS[KMS Asymmetric Key<br/>RSA-2048, non-exportable] -->|kms:Sign| CA[Per-tenant CA cert]
-    CA --> SAKey[SA signing key pair]
-    SAKey --> JWKS[JWKS in DynamoDB]
-    CA --> SM1[Secrets Manager: ca-key]
-    CA --> SM2[Secrets Manager: ca-crt]
-    SAKey --> SM3[Secrets Manager: sa-key]
-```
+3. **KMS-backed PKI**: Tenant CA certificates are signed by a shared KMS asymmetric key. SA signing keys and JWKS are pre-registered in DynamoDB before EC2 launch — no post-boot registration needed.
+
+4. **Dual-mode cluster lifecycle**: The unified `POST /clusters` endpoint handles both managed (full EC2 provisioning) and self-managed (BYOK register-only). Mode is inferred from request body.
+
+5. **O(1) credential lookup**: DynamoDB uses `PK=CLUSTER#<name>` / `SK=<namespace>#<serviceAccount>` for instant GetItem during credential exchange.
+
+6. **Per-user tenancy**: `CallerIdentityFilter` extracts `idcUserId` from IAM Identity Center session names. Quota enforcement is per-user.
+
+## Authentication Model
+
+| Endpoint | Auth Method | Details |
+|----------|-------------|---------|
+| `POST /clusters/{name}/assets` | None (API GW level) | Token validated by Lambda via JWKS |
+| Management APIs | IAM SigV4 | Via API Gateway authorizer |
+| Tenant-service Function URL | IAM SigV4 | Direct Lambda invocation |
+| Pod SA tokens | JWT | Audience: `pods.eks.amazonaws.com` |
+| In-cluster proxy → K8s | TokenReview | Fast-fail before Lambda call |
+
+## Infrastructure Patterns
+
+- **SSM Parameter Contract**: Infrastructure (CDK) writes parameters, Lambda reads at runtime. Decouples deployment timing.
+- **Shared VPC**: All tenants share a VPC; each gets a dedicated subnet + security group.
+- **Naming conventions**: Shared infra uses `eks-d-xpress-` prefix; per-tenant uses `eks-dx-tenant-` prefix (via `TenantNaming` class).
+- **Platform tagging**: Shared resources tagged `Platform=eks-d-xpress`.

@@ -2,81 +2,136 @@
 
 ## DynamoDB Tables
 
-### eks-d-xpress-clusters
+### eks-dx-clusters
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `clusterName` (PK) | S | Unique cluster identifier |
-| `jwks` | S | JSON Web Key Set (public keys) |
-| `issuer` | S | SA token issuer URL |
-| `tenantId` | S | Associated tenant ID |
-| `ownerArn` | S | IAM ARN of the owner |
-| `managed` | S | "true" or "false" |
-| `createdAt` | S | ISO-8601 timestamp |
+Stores registered cluster metadata and JWKS.
 
-### eks-d-xpress-associations
+| Attribute | Type | Key | Description |
+|-----------|------|-----|-------------|
+| `clusterName` | S | PK | Unique cluster name |
+| `ownerArn` | S | — | IAM ARN of registering user |
+| `issuer` | S | — | OIDC issuer URL |
+| `jwks` | S | — | JSON Web Key Set (cached) |
+| `jwksLastUpdated` | N | — | Epoch timestamp of JWKS refresh |
+| `managed` | BOOL | — | Whether cluster is managed (provisioned) |
+| `createdAt` | S | — | ISO timestamp |
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `PK` | S | `CLUSTER#<clusterName>` |
-| `SK` | S | `<namespace>#<serviceAccount>` |
-| `roleArn` | S | IAM role to assume |
-| `associationId` | S | Unique association ID |
-| `createdAt` | S | ISO-8601 timestamp |
+### eks-dx-associations
 
-O(1) GetItem for credential exchange hot path.
+Maps service accounts to IAM roles for credential exchange.
 
-### eks-d-xpress-tenants
+| Attribute | Type | Key | Description |
+|-----------|------|-----|-------------|
+| `PK` | S | Partition | `CLUSTER#<clusterName>` |
+| `SK` | S | Sort | `<namespace>#<serviceAccount>` |
+| `roleArn` | S | — | IAM role ARN to assume |
+| `associationId` | S | — | UUID for API reference |
+| `ownerArn` | S | — | IAM ARN of creator |
+| `clusterName` | S | — | Denormalized cluster name |
+| `namespace` | S | — | K8s namespace |
+| `serviceAccount` | S | — | K8s service account name |
+| `createdAt` | S | — | ISO timestamp |
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `tenantId` (PK) | S | System-derived 8-char hex hash |
-| `clusterName` | S | User-visible cluster name |
-| `managed` | S | "true" or "false" |
-| `idcUserId` | S | IAM Identity Center user identity |
-| `ownerArn` | S | Normalized IAM ARN |
-| `state` | S | provisioning / ready / failed / stopped |
-| `phase` | S | Human-readable progress description |
-| `progress` | N | 0-100 percentage |
-| `instanceId` | S | EC2 instance ID (managed only) |
-| `publicIp` | S | Instance public IP |
-| `eipAllocationId` | S | Elastic IP allocation |
-| `sshKeySecretArn` | S | Secrets Manager ARN for SSH key |
-| `ec2PricingModel` | S | spot or ondemand |
-| `createdAt` | S | ISO-8601 timestamp |
-| `updatedAt` | S | ISO-8601 timestamp |
+### eks-dx-tenants
 
-## Java Records
+Tracks tenant provisioning state and resources.
+
+| Attribute | Type | Key | Description |
+|-----------|------|-----|-------------|
+| `tenantId` | S | PK | Deterministic 8-char hex ID |
+| `clusterName` | S | — | Associated cluster name |
+| `ownerArn` | S | — | Provisioning user's ARN |
+| `idcUserId` | S | — | IAM Identity Center user ID |
+| `state` | S | — | Current state (PROVISIONING, READY, STOPPED, FAILED) |
+| `progress` | N | — | Progress percentage (0–100) |
+| `instanceId` | S | — | EC2 instance ID |
+| `publicIp` | S | — | Public IP (EIP) |
+| `arch` | S | — | Architecture (arm64, x86_64) |
+| `ec2PricingModel` | S | — | spot or ondemand |
+| `managed` | BOOL | — | Always true for provisioned tenants |
+| `createdAt` | S | — | ISO timestamp |
+| `updatedAt` | S | — | Last state change |
+
+## Domain Records
+
+### TokenClaims (shared model)
+
+```java
+record TokenClaims(
+    String namespace,
+    String serviceAccount,
+    String podName,
+    String podUid,
+    String serviceAccountUid,
+    Map<String, String> sessionTags,
+    Instant expiration
+)
+```
+
+### CallerIdentity (shared model)
+
+```java
+record CallerIdentity(
+    String userArn,          // Full IAM ARN
+    String idcUserId,        // Extracted IAM Identity Center email
+    String sourceIp          // Client IP from API Gateway context
+)
+```
 
 ### TenantItem
+
 ```java
-public record TenantItem(
-    String tenantId, String clusterName, boolean managed,
-    String idcUserId, String ownerArn, String createdAt, String updatedAt,
-    String state, String phase, int progress,
-    String instanceId, String publicIp, String eipAllocationId,
-    String sshKeySecretArn, String ec2PricingModel, String error
-) {}
+record TenantItem(
+    String tenantId,
+    String clusterName,
+    String ownerArn,
+    String idcUserId,
+    String state,
+    int progress,
+    String instanceId,
+    String publicIp,
+    String arch,
+    String ec2PricingModel,
+    boolean managed,
+    String createdAt,
+    String updatedAt
+)
 ```
 
 ### TenantProgress
+
 ```java
-public record TenantProgress(
-    String state, String phase, int progress,
-    String publicIp, long elapsedSeconds, String error, String sshPrivateKey
-) {}
+record TenantProgress(
+    String tenantId,
+    String state,
+    int progress,
+    String message
+)
 ```
 
-### TenantCryptoService.CryptoResult
-```java
-public record CryptoResult(String jwks, String issuer, String caKeySecret, String caCrtSecret, String saKeySecret) {}
+### ProvisionedResources (rollback tracker)
+
+Tracks AWS resources created during provisioning for compensating rollback:
+- Subnet ID
+- Security group ID
+- IAM role name / instance profile name
+- EC2 instance ID
+- EIP allocation ID
+- SQS queue URLs (progress + interruption)
+- EventBridge rule names
+- DLM policy ID
+- Secrets Manager secret ARNs
+
+## SSM Parameter Schema
+
+```
+/eks-d-xpress/infra/launch-template/{arch}/{spot|ondemand}  → Launch template ID
+/eks-d-xpress/infra/ami/{arch}/{k8s-version}                → AMI ID
+/eks-d-xpress/infra/network/vpc-id                          → VPC ID
+/eks-d-xpress/control-plane/api/endpoint                    → API Gateway URL
+/eks-d-xpress/control-plane/quota/max-tenants-per-caller    → Quota limit
 ```
 
 ## Tenant ID Generation
 
-```
-tenantId = HEX(SHA256(idcUserId + ":" + createdAt))[:8]
-```
-
-- `idcUserId`: IAM Identity Center email (from session name) or IAM user ARN
-- Collision retry extends to 9 chars
+Deterministic 8-character lowercase hex hash derived from `SHA-256(userId + createdAt)`. Extended variant (9 chars) used for some resource naming. Same inputs always produce the same ID.

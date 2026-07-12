@@ -1,107 +1,172 @@
 # Workflows
 
+## Credential Exchange (Hot Path)
+
+```mermaid
+sequenceDiagram
+    participant Pod
+    participant Agent as Pod Identity Agent
+    participant Proxy as eks-dx-auth-proxy
+    participant K8s as K8s API Server
+    participant Lambda as credential-service
+    participant DDB as DynamoDB
+    participant STS as AWS STS
+
+    Pod->>Agent: Request credentials
+    Agent->>Proxy: POST /clusters/{name}/assets {token}
+    Proxy->>K8s: TokenReview (audience: pods.eks.amazonaws.com)
+    K8s-->>Proxy: Authenticated (claims)
+    Proxy->>Lambda: Forward token + claims
+    Lambda->>DDB: Fetch JWKS for cluster
+    Lambda->>Lambda: Validate JWT signature
+    Lambda->>DDB: GetItem CLUSTER#name / ns#sa
+    Lambda->>STS: AssumeRole(roleArn, sessionTags)
+    STS-->>Lambda: Temporary credentials
+    Lambda-->>Proxy: {AccessKeyId, SecretAccessKey, Token, Expiration}
+    Proxy-->>Agent: Credentials
+    Agent-->>Pod: AWS credentials available
+```
+
 ## Managed Cluster Provisioning
 
 ```mermaid
 sequenceDiagram
     participant CLI as eks-dx CLI
-    participant Lambda as tenant-service
-    participant KMS
-    participant SM as Secrets Manager
+    participant TSvc as tenant-service
     participant DDB as DynamoDB
-    participant EC2
+    participant Net as TenantNetworkService
+    participant Crypto as TenantCryptoService
+    participant IAM as TenantIamService
+    participant SQS as AWS SQS
+    participant EC2 as TenantEc2Service
+    participant DLM as TenantDlmService
 
-    CLI->>Lambda: POST /clusters {clusterName, arch, pricing}
-    Lambda->>Lambda: 1. Create network (subnets + SG)
-    Lambda->>KMS: 2. kms:Sign (CA cert)
-    Lambda->>SM: 3. Store ca-key, ca-crt, sa-key
-    Lambda->>DDB: 4. Pre-register cluster (JWKS + issuer)
-    Lambda->>Lambda: 5. Create IAM role + instance profile
-    Lambda->>Lambda: 6. Create SQS queue + EventBridge rules
-    Lambda->>Lambda: 7. Create DLM policy
-    Lambda->>EC2: 8. RunInstances (Launch Template)
-    Lambda->>DDB: 9. Write tenant record (state=provisioning)
-    Lambda-->>CLI: 202 {tenantId, clusterName}
-
-    Note over EC2: First-boot script runs
-    EC2->>SM: Fetch ca-key, ca-crt, sa-key
-    EC2->>EC2: Write /etc/kubernetes/pki/*
-    EC2->>EC2: kubeadm init (uses pre-placed keys)
-    EC2->>DDB: Update progress (state=ready)
+    CLI->>TSvc: POST /clusters {name, managed:true}
+    TSvc->>DDB: Check cluster name uniqueness
+    TSvc->>DDB: Write initial record (PROVISIONING, 0%)
+    TSvc->>SQS: Create progress queue
+    TSvc->>Net: createTenantNetwork()
+    Note over Net: Subnet + Security Group + Route Table
+    TSvc->>Crypto: generateAndStore()
+    Note over Crypto: CA cert (KMS-signed) + SA keys + JWKS
+    TSvc->>IAM: createTenantRole()
+    Note over IAM: Role + inline policy + instance profile
+    TSvc->>SQS: Create interruption queue
+    TSvc->>TSvc: Create EventBridge rules
+    TSvc->>DLM: createEtcdBackupPolicy()
+    TSvc->>EC2: launchInstance()
+    Note over EC2: Launch + associate EIP
+    TSvc->>DDB: Pre-register cluster (JWKS in DDB)
+    TSvc-->>CLI: 202 Accepted {tenantId, clusterName}
+    CLI->>TSvc: GET /tenants/{id}/stream (SSE)
+    TSvc->>SQS: Poll progress queue
+    Note over TSvc: Stream progress events to CLI
 ```
 
-## Managed Cluster Deletion
+## Provisioning Rollback (Failure Compensation)
 
 ```mermaid
-sequenceDiagram
-    participant CLI as eks-dx CLI
-    participant Lambda as tenant-service
-    participant EC2
-    participant IAM
-    participant Network
-    participant SM as Secrets Manager
-    participant DDB as DynamoDB
-
-    CLI->>Lambda: DELETE /clusters/{name}
-    Lambda->>DDB: Lookup cluster record (managed=true?)
-    Lambda->>EC2: TerminateInstances + wait
-    Lambda->>Lambda: Release EIP
-    Lambda->>Lambda: Delete DLM (snapshots → policy → role)
-    Lambda->>Lambda: Delete EventBridge rules + SQS queue
-    Lambda->>IAM: Delete role + instance profile
-    Lambda->>EC2: Delete key pair
-    Lambda->>SM: Delete SSH key secret
-    Lambda->>Lambda: Delete PKI secrets (crypto service)
-    Lambda->>DDB: Delete cluster record
-    Lambda->>Network: Delete subnets + SG
-    Lambda->>DDB: Delete tenant record
-    Lambda-->>CLI: 204
+flowchart TD
+    A[Provisioning starts] --> B{Network created?}
+    B -->|Yes| C{Crypto generated?}
+    B -->|No| Z[Done - nothing to clean]
+    C -->|Yes| D{IAM created?}
+    C -->|No| E[Delete subnet + SG]
+    D -->|Yes| F{EC2 launched?}
+    D -->|No| G[Delete secrets + subnet + SG]
+    F -->|Yes| H[Terminate instance]
+    F -->|No| I[Delete role + secrets + subnet + SG]
+    H --> J[Release EIP]
+    J --> K[Delete SQS queues]
+    K --> L[Delete EventBridge rules]
+    L --> M[Delete DLM policy]
+    M --> N[Delete IAM role]
+    N --> O[Delete secrets]
+    O --> P[Delete subnet + SG]
+    P --> Z
 ```
-
-## Rollback on Provisioning Failure
-
-If any step fails during provisioning, `ProvisionedResources` tracks what was created. Rollback happens in reverse order:
-
-1. Terminate EC2 instance (wait for termination)
-2. Release EIP
-3. Delete DLM policy
-4. Delete EventBridge rules + SQS queue
-5. Delete IAM role + instance profile
-6. Delete key pair
-7. Delete SSH key secret
-8. Delete PKI secrets (TenantCryptoService.deleteSecrets)
-9. Delete pre-registered cluster from DynamoDB
-10. Delete network (TenantNetworkService — also does internal cleanup on partial failure)
 
 ## Self-Managed Cluster Registration
 
 ```mermaid
 sequenceDiagram
     participant CLI as eks-dx CLI
-    participant Lambda as tenant-service
+    participant K8s as Target Cluster
+    participant TSvc as tenant-service
     participant DDB as DynamoDB
 
-    CLI->>Lambda: POST /clusters {clusterName, jwks, issuer}
-    Lambda->>DDB: PutItem (clusters table: JWKS + issuer)
-    Lambda->>DDB: PutItem (tenants table: managed=false)
-    Lambda-->>CLI: 201 {tenantId, clusterName}
+    CLI->>K8s: Fetch OIDC discovery + JWKS
+    CLI->>TSvc: POST /clusters {name, jwks, issuer}
+    Note over TSvc: jwks present → self-managed mode
+    TSvc->>DDB: Check uniqueness
+    TSvc->>DDB: Write cluster record + associations table
+    TSvc-->>CLI: 201 Created
 ```
 
-## Credential Exchange (Hot Path)
+## Cluster Deletion
 
-1. Pod calls eks-pod-identity-agent (DaemonSet, intercepts 169.254.170.23)
-2. Agent calls eks-dx-auth-proxy (in-cluster, kube-system)
-3. Proxy does Kubernetes TokenReview (fast-fail: validates JWT signature + audience)
-4. Proxy forwards to credential-service Lambda (API Gateway)
-5. Lambda validates JWT via JWKS (DynamoDB-cached, 5-min TTL per cluster|audience)
-6. Lambda looks up association: `PK=CLUSTER#<name>`, `SK=<namespace>#<serviceAccount>`
-7. Lambda calls STS AssumeRole with session tags from token claims
-8. Returns temporary AWS credentials to pod
+```mermaid
+flowchart TD
+    A[DELETE /clusters/name] --> B{managed?}
+    B -->|Yes| C[Full deprovision]
+    C --> D[Terminate EC2]
+    D --> E[Release EIP]
+    E --> F[Delete SQS queues]
+    F --> G[Delete EventBridge rules]
+    G --> H[Delete DLM snapshots + policy]
+    H --> I[Delete IAM role + instance profile]
+    I --> J[Delete network subnet + SG]
+    J --> K[Delete Secrets Manager secrets]
+    K --> L[Deregister from DynamoDB]
+    B -->|No| L
+    L --> M[Done]
+```
 
-## Network Allocation
+## Pod Identity Webhook Flow
 
-- VPC: `10.0.0.0/16` (shared)
-- Shared infra subnet: `10.0.0.0/24`
-- Per-tenant public subnet: `10.0.<index>.0/24` (index auto-incremented)
-- Per-tenant private subnet: `10.0.<100+index>.0/24`
-- Control plane IP: `10.0.<index>.5` (static within public subnet)
+```mermaid
+sequenceDiagram
+    participant K8s as K8s API Server
+    participant WH as Pod Identity Webhook
+    participant Lambda as mgmt-service
+
+    K8s->>WH: AdmissionReview (Pod CREATE)
+    WH->>Lambda: Check association exists (ns + sa)
+    Lambda-->>WH: Association found (roleArn)
+    WH->>WH: Build JSON patches
+    Note over WH: 1. Add env vars<br/>2. Add projected token volume<br/>3. Add volume mount
+    WH-->>K8s: AdmissionResponse (patches)
+```
+
+## EC2NodeClass Webhook Flow (Karpenter)
+
+```mermaid
+sequenceDiagram
+    participant K8s as K8s API Server
+    participant WH as Karpenter Support Webhook
+    participant CI as ClusterIdentityService
+
+    K8s->>WH: AdmissionReview (EC2NodeClass CREATE/UPDATE)
+    WH->>CI: Get cluster identity
+    CI-->>WH: {endpoint, CA, serviceCIDR, clusterName}
+    WH->>WH: Rewrite amiFamily → Custom
+    WH->>WH: Merge userData (MIME multipart)
+    WH->>WH: Inject cluster tags
+    WH-->>K8s: AdmissionResponse (mutated spec)
+```
+
+## Stop/Resume Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> PROVISIONING
+    PROVISIONING --> READY : Boot complete
+    PROVISIONING --> FAILED : Error
+    READY --> STOPPING : stop-cluster
+    STOPPING --> STOPPED : Instance stopped
+    STOPPED --> RESUMING : resume-cluster
+    RESUMING --> READY : Instance running + IP
+    FAILED --> [*] : delete-cluster
+    READY --> [*] : delete-cluster
+    STOPPED --> [*] : delete-cluster
+```
