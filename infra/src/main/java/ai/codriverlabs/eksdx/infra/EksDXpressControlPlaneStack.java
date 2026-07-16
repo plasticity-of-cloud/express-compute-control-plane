@@ -197,8 +197,11 @@ public class EksDXpressControlPlaneStack extends Stack {
             .build();
 
         // -----------------------------------------------------------------------
-        // Lambda: credential service  (hot path — SnapStart)
+        // Lambda: credential service  (hot path — SnapStart in JVM, native in PRO)
         // -----------------------------------------------------------------------
+        // Context: -c nativeAll=true → credential + mgmt services deploy as native arm64
+        boolean nativeAll = "true".equals(this.getNode().tryGetContext("nativeAll"));
+
         LogGroup credentialLogGroup = LogGroup.Builder.create(this, "CredentialFnLogGroup")
             .logGroupName("/aws/lambda/eks-d-xpress-credential-service")
             .retention(RetentionDays.ONE_MONTH)
@@ -213,10 +216,11 @@ public class EksDXpressControlPlaneStack extends Stack {
 
         Function credentialFn = Function.Builder.create(this, "EksDxCredentialFunction")
             .functionName("eks-d-xpress-credential-service")
-            .runtime(Runtime.JAVA_25)
-            .handler("io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest")
+            .runtime(nativeAll ? Runtime.PROVIDED_AL2023 : Runtime.JAVA_25)
+            .architecture(nativeAll ? Architecture.ARM_64 : Architecture.X86_64)
+            .handler(nativeAll ? "bootstrap" : "io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest")
             .code(Code.fromAsset(credentialZip))
-            .memorySize(512)
+            .memorySize(nativeAll ? 128 : 512)
             .timeout(Duration.seconds(30))
             .role(credentialBrokerRole)
             .environment(Map.of(
@@ -226,9 +230,11 @@ public class EksDXpressControlPlaneStack extends Stack {
             .logGroup(credentialLogGroup)
             .build();
 
-        // SnapStart on published versions
-        CfnFunction cfnCredential = (CfnFunction) credentialFn.getNode().getDefaultChild();
-        cfnCredential.addPropertyOverride("SnapStart", Map.of("ApplyOn", "PublishedVersions"));
+        // SnapStart on published versions (JVM mode only — native doesn't need it)
+        if (!nativeAll) {
+            CfnFunction cfnCredential = (CfnFunction) credentialFn.getNode().getDefaultChild();
+            cfnCredential.addPropertyOverride("SnapStart", Map.of("ApplyOn", "PublishedVersions"));
+        }
 
         // IAM: GetItem only (not full CRUD) — credential path is read-only on DynamoDB
         credentialFn.addToRolePolicy(PolicyStatement.Builder.create()
@@ -258,10 +264,11 @@ public class EksDXpressControlPlaneStack extends Stack {
 
         Function mgmtFn = Function.Builder.create(this, "EksDxMgmtFunction")
             .functionName("eks-d-xpress-mgmt-service")
-            .runtime(Runtime.JAVA_25)
-            .handler("io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest")
+            .runtime(nativeAll ? Runtime.PROVIDED_AL2023 : Runtime.JAVA_25)
+            .architecture(nativeAll ? Architecture.ARM_64 : Architecture.X86_64)
+            .handler(nativeAll ? "bootstrap" : "io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest")
             .code(Code.fromAsset(mgmtZip))
-            .memorySize(256)
+            .memorySize(nativeAll ? 128 : 256)
             .timeout(Duration.seconds(30))
             .environment(Map.of(
                 "EKS_DX_CLUSTERS_TABLE", clustersTable.getTableName(),
