@@ -38,6 +38,7 @@ class ClusterResourceTest {
     void setUp() throws Exception {
         resource = new ClusterResource();
         setField("provisioningService", provisioningService);
+        setField("deploymentMode", "hybrid"); // default: both flows allowed
 
         when(ctx.getProperty("callerArn")).thenReturn("arn:aws:iam::123:role/dev");
         when(ctx.getProperty("idcUserId")).thenReturn("user@example.com");
@@ -167,6 +168,45 @@ class ClusterResourceTest {
     void missingClusterName_returns400() {
         Response r = resource.createCluster(managedReq(null), ctx);
         assertEquals(400, r.getStatus());
+    }
+
+    // -------------------------------------------------------------------------
+    // Deployment mode guard — managed mode rejects self-managed
+    // -------------------------------------------------------------------------
+
+    @Test
+    void managedMode_rejectsSelfManagedRegistration() throws Exception {
+        setField("deploymentMode", "managed");
+
+        Response r = resource.createCluster(selfManagedReq("k3s-cluster"), ctx);
+
+        assertEquals(400, r.getStatus());
+        assertErrorCode(r, "InvalidParameterException");
+        assertMessageContains(r, "disabled in managed-only deployment mode");
+    }
+
+    @Test
+    void hybridMode_allowsSelfManagedRegistration() throws Exception {
+        setField("deploymentMode", "hybrid");
+        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any()))
+            .thenReturn("abc123");
+
+        Response r = resource.createCluster(selfManagedReq("k3s-cluster"), ctx);
+
+        assertEquals(201, r.getStatus());
+    }
+
+    @Test
+    void managedMode_allowsManagedProvisioning() throws Exception {
+        setField("deploymentMode", "managed");
+        when(provisioningService.countTenantsByOwner(any())).thenReturn(0);
+        when(provisioningService.getMaxTenantsPerCaller()).thenReturn(5);
+        when(provisioningService.provision(any(), anyBoolean(), any(), any(), any(), any(), any(),
+            anyBoolean(), anyInt(), any())).thenReturn("tenant123");
+
+        Response r = resource.createCluster(managedReq("managed-cluster"), ctx);
+
+        assertEquals(202, r.getStatus());
     }
 
     // -------------------------------------------------------------------------

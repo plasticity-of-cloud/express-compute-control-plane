@@ -55,10 +55,15 @@ import java.util.Map;
 /**
  * CDK stack for EKS-DX — at parity with sam.yaml.
  *
- * Three Lambda functions:
- *   credentialFn  — hot path, SnapStart, JVM
- *   mgmtFn        — cluster/association CRUD, JVM
- *   tenantFn      — async provisioning + SSE stream, GraalVM native arm64, Function URL
+ * Deployment modes (CDK context: deploymentMode):
+ *   self-managed — credential-service + mgmt-service only (no infra stack dependency)
+ *   managed      — adds tenant-service (requires eks-d-xpress-infra stack)
+ *   hybrid       — same as managed, both flows enabled (default)
+ *
+ * Lambda functions:
+ *   credentialFn  — hot path, SnapStart, JVM (always deployed)
+ *   mgmtFn        — cluster/association CRUD, JVM (always deployed)
+ *   tenantFn      — async provisioning + SSE stream, GraalVM native arm64, Function URL (managed/hybrid only)
  */
 public class EksDXpressControlPlaneStack extends Stack {
 
@@ -69,6 +74,20 @@ public class EksDXpressControlPlaneStack extends Stack {
         // Stack-level tags
         // -----------------------------------------------------------------------
         Tags.of(this).add("Project", "eks-d-xpress-control-plane");
+
+        // -----------------------------------------------------------------------
+        // Deployment mode: self-managed | managed | hybrid (default)
+        // -----------------------------------------------------------------------
+        String deploymentMode = (String) this.getNode().tryGetContext("deploymentMode");
+        if (deploymentMode == null || deploymentMode.isBlank()) {
+            deploymentMode = "hybrid";
+        }
+        if (!List.of("self-managed", "managed", "hybrid").contains(deploymentMode)) {
+            throw new IllegalArgumentException(
+                "Invalid deploymentMode: " + deploymentMode + ". Must be one of: self-managed, managed, hybrid");
+        }
+        boolean deployTenantService = !deploymentMode.equals("self-managed");
+        final String effectiveDeploymentMode = deploymentMode;
 
         // Resolve asset paths: release bundle uses ../assets/ by default.
         // Development builds use --context development=true to resolve from target/ dirs.
@@ -123,27 +142,34 @@ public class EksDXpressControlPlaneStack extends Stack {
             .pointInTimeRecoverySpecification(PointInTimeRecoverySpecification.builder().pointInTimeRecoveryEnabled(true).build())
             .build();
 
-        Table tenantsTable = Table.Builder.create(this, "TenantsTable")
-            .tableName("eks-d-xpress-tenants")
-            .partitionKey(Attribute.builder().name("tenantId").type(AttributeType.STRING).build())
-            .billingMode(BillingMode.PAY_PER_REQUEST)
-            .removalPolicy(RemovalPolicy.DESTROY)
-            .pointInTimeRecoverySpecification(PointInTimeRecoverySpecification.builder().pointInTimeRecoveryEnabled(true).build())
-            .build();
+        Table tenantsTable = null;
+        if (deployTenantService) {
+            tenantsTable = Table.Builder.create(this, "TenantsTable")
+                .tableName("eks-d-xpress-tenants")
+                .partitionKey(Attribute.builder().name("tenantId").type(AttributeType.STRING).build())
+                .billingMode(BillingMode.PAY_PER_REQUEST)
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .pointInTimeRecoverySpecification(PointInTimeRecoverySpecification.builder().pointInTimeRecoveryEnabled(true).build())
+                .build();
+        }
 
         // -----------------------------------------------------------------------
         // SSM Parameter lookups (written by eks-d-xpress/infra stack)
+        // Only required for managed/hybrid modes (tenant provisioning needs VPC + launch templates)
         // -----------------------------------------------------------------------
-        String ltArm64Ondemand = StringParameter.valueForStringParameter(
-            this, "/eks-d-xpress/infra/launch-template/arm64/ondemand");
-        String ltArm64Spot = StringParameter.valueForStringParameter(
-            this, "/eks-d-xpress/infra/launch-template/arm64/spot");
-        String ltX86Ondemand = StringParameter.valueForStringParameter(
-            this, "/eks-d-xpress/infra/launch-template/x86_64/ondemand");
-        String ltX86Spot = StringParameter.valueForStringParameter(
-            this, "/eks-d-xpress/infra/launch-template/x86_64/spot");
-        String vpcId = StringParameter.valueForStringParameter(
-            this, "/eks-d-xpress/infra/network/vpc-id");
+        String ltArm64Ondemand = null, ltArm64Spot = null, ltX86Ondemand = null, ltX86Spot = null, vpcId = null;
+        if (deployTenantService) {
+            ltArm64Ondemand = StringParameter.valueForStringParameter(
+                this, "/eks-d-xpress/infra/launch-template/arm64/ondemand");
+            ltArm64Spot = StringParameter.valueForStringParameter(
+                this, "/eks-d-xpress/infra/launch-template/arm64/spot");
+            ltX86Ondemand = StringParameter.valueForStringParameter(
+                this, "/eks-d-xpress/infra/launch-template/x86_64/ondemand");
+            ltX86Spot = StringParameter.valueForStringParameter(
+                this, "/eks-d-xpress/infra/launch-template/x86_64/spot");
+            vpcId = StringParameter.valueForStringParameter(
+                this, "/eks-d-xpress/infra/network/vpc-id");
+        }
 
         // -----------------------------------------------------------------------
         // CloudWatch Log Group for API Gateway access logs
@@ -259,225 +285,221 @@ public class EksDXpressControlPlaneStack extends Stack {
             .build());
 
         // -----------------------------------------------------------------------
-        // KMS: CA signing key (shared, used to sign per-tenant CA certificates)
+        // KMS + Tenant Service (managed/hybrid modes only)
         // -----------------------------------------------------------------------
-        var caSigningKey = software.amazon.awscdk.services.kms.Key.Builder.create(this, "CaSigningKey")
-            .alias("eks-d-xpress/control-plane/ca-signing-key")
-            .description("Shared asymmetric key for signing tenant CA certificates")
-            .keySpec(software.amazon.awscdk.services.kms.KeySpec.RSA_2048)
-            .keyUsage(software.amazon.awscdk.services.kms.KeyUsage.SIGN_VERIFY)
-            .removalPolicy(RemovalPolicy.RETAIN)
-            .build();
+        Function tenantFn = null;
+        FunctionUrl tenantFunctionUrl = null;
+        if (deployTenantService) {
+            var caSigningKey = software.amazon.awscdk.services.kms.Key.Builder.create(this, "CaSigningKey")
+                .alias("eks-d-xpress/control-plane/ca-signing-key")
+                .description("Shared asymmetric key for signing tenant CA certificates")
+                .keySpec(software.amazon.awscdk.services.kms.KeySpec.RSA_2048)
+                .keyUsage(software.amazon.awscdk.services.kms.KeyUsage.SIGN_VERIFY)
+                .removalPolicy(RemovalPolicy.RETAIN)
+                .build();
 
-        // -----------------------------------------------------------------------
-        // Lambda: tenant service  (GraalVM native, arm64, SSE via Function URL)
-        // -----------------------------------------------------------------------
-        // Context flags:
-        //   -c nativeArch=x86   → GraalVM native on x86_64 (build without -Pnative on arm64)
-        //   -c jvmTenant=true   → JVM mode on x86_64 (skip native build entirely)
-        //   (default)           → GraalVM native on arm64 (prod)
-        boolean jvmMode = "true".equals(this.getNode().tryGetContext("jvmTenant"));
-        boolean x86Native = "x86".equals(this.getNode().tryGetContext("nativeArch"));
-        boolean dryRun = "true".equals(this.getNode().tryGetContext("dryRun"));
-        Runtime tenantRuntime = jvmMode ? Runtime.JAVA_25 : Runtime.PROVIDED_AL2023;
-        Architecture tenantArch = (jvmMode || x86Native) ? Architecture.X86_64 : Architecture.ARM_64;
-        // Write the API endpoint to SSM so EC2 instances can read it at boot
-        // without baking it into user data (decouples endpoint from instance launch).
-        String endpointParamName = "/eks-d-xpress/control-plane/api/endpoint";
-        StringParameter.Builder.create(this, "ApiEndpointParam")
-            .parameterName(endpointParamName)
-            .stringValue(api.getUrl())
-            .description("EKS-DX API Gateway endpoint — read by EC2 instances at boot")
-            .build();
+            // Context flags:
+            //   -c nativeArch=x86   → GraalVM native on x86_64 (build without -Pnative on arm64)
+            //   -c jvmTenant=true   → JVM mode on x86_64 (skip native build entirely)
+            //   (default)           → GraalVM native on arm64 (prod)
+            boolean jvmMode = "true".equals(this.getNode().tryGetContext("jvmTenant"));
+            boolean x86Native = "x86".equals(this.getNode().tryGetContext("nativeArch"));
+            boolean dryRun = "true".equals(this.getNode().tryGetContext("dryRun"));
+            Architecture tenantArch = (jvmMode || x86Native) ? Architecture.X86_64 : Architecture.ARM_64;
 
-        // Quota: max tenants per caller identity (ownership isolation)
-        var maxTenantsPerCaller = StringParameter.Builder.create(this, "MaxTenantsPerCallerParam")
-            .parameterName("/eks-d-xpress/control-plane/quota/max-tenants-per-caller")
-            .stringValue("1")
-            .description("Maximum tenants a single IAM identity can provision")
-            .build();
+            // Write the API endpoint to SSM so EC2 instances can read it at boot
+            String endpointParamName = "/eks-d-xpress/control-plane/api/endpoint";
+            StringParameter.Builder.create(this, "ApiEndpointParam")
+                .parameterName(endpointParamName)
+                .stringValue(api.getUrl())
+                .description("EKS-DX API Gateway endpoint — read by EC2 instances at boot")
+                .build();
 
-        LogGroup tenantLogGroup = LogGroup.Builder.create(this, "TenantFnLogGroup")
-            .logGroupName("/aws/lambda/eks-d-xpress-tenant-service")
-            .retention(RetentionDays.ONE_MONTH)
-            .removalPolicy(RemovalPolicy.DESTROY)
-            .build();
+            // Quota: max tenants per caller identity (ownership isolation)
+            var maxTenantsPerCaller = StringParameter.Builder.create(this, "MaxTenantsPerCallerParam")
+                .parameterName("/eks-d-xpress/control-plane/quota/max-tenants-per-caller")
+                .stringValue("1")
+                .description("Maximum tenants a single IAM identity can provision")
+                .build();
 
-        // Lambda Web Adapter layer — bridges HTTP server to Lambda streaming Runtime API
-        String region = this.getRegion();
-        String webAdapterLayerArn = tenantArch == Architecture.ARM_64
-            ? "arn:aws:lambda:" + region + ":753240598075:layer:LambdaAdapterLayerArm64:25"
-            : "arn:aws:lambda:" + region + ":753240598075:layer:LambdaAdapterLayerX86:25";
-        var webAdapterLayer = LayerVersion.fromLayerVersionArn(this, "LambdaWebAdapter", webAdapterLayerArn);
+            LogGroup tenantLogGroup = LogGroup.Builder.create(this, "TenantFnLogGroup")
+                .logGroupName("/aws/lambda/eks-d-xpress-tenant-service")
+                .retention(RetentionDays.ONE_MONTH)
+                .removalPolicy(RemovalPolicy.DESTROY)
+                .build();
 
-        // With Web Adapter: JVM mode uses java25 runtime + EXEC_WRAPPER,
-        // native mode uses provided.al2023 (binary is the HTTP server)
-        Function tenantFn = Function.Builder.create(this, "EksDxTenantFunction")
-            .functionName("eks-d-xpress-tenant-service")
-            .runtime(jvmMode ? Runtime.JAVA_25 : Runtime.PROVIDED_AL2023)
-            .architecture(tenantArch)
-            .handler(jvmMode ? "run.sh" : "bootstrap")
-            .code(Code.fromAsset(tenantZip))
-            .layers(List.of(webAdapterLayer))
-            .memorySize(jvmMode ? 512 : 256)
-            .timeout(Duration.seconds(900))
-            .environment(java.util.Map.ofEntries(
-                Map.entry("EKS_DX_TENANTS_TABLE", tenantsTable.getTableName()),
-                Map.entry("EKS_DX_CLUSTERS_TABLE", clustersTable.getTableName()),
-                Map.entry("EKS_DX_LT_ARM64_ONDEMAND", ltArm64Ondemand),
-                Map.entry("EKS_DX_LT_ARM64_SPOT", ltArm64Spot),
-                Map.entry("EKS_DX_LT_X86_ONDEMAND", ltX86Ondemand),
-                Map.entry("EKS_DX_LT_X86_SPOT", ltX86Spot),
-                Map.entry("EKS_DX_VPC_ID", vpcId),
-                Map.entry("EKS_DX_KMS_CA_KEY_ID", caSigningKey.getKeyId()),
-                Map.entry("EKS_DX_AVAILABILITY_ZONE", "auto"),
-                Map.entry("EKS_DX_DRY_RUN", String.valueOf(dryRun)),
-                Map.entry("EKS_DX_MAX_TENANTS_PER_CALLER", maxTenantsPerCaller.getStringValue()),
-                Map.entry("AWS_LWA_INVOKE_MODE", "response_stream"),
-                Map.entry("AWS_LAMBDA_EXEC_WRAPPER", "/opt/bootstrap"),
-                Map.entry("READINESS_CHECK_PATH", "/q/health/ready"),
-                Map.entry("PORT", "8080")))
-            .logGroup(tenantLogGroup)
-            .build();
+            // Lambda Web Adapter layer — bridges HTTP server to Lambda streaming Runtime API
+            String region = this.getRegion();
+            String webAdapterLayerArn = tenantArch == Architecture.ARM_64
+                ? "arn:aws:lambda:" + region + ":753240598075:layer:LambdaAdapterLayerArm64:25"
+                : "arn:aws:lambda:" + region + ":753240598075:layer:LambdaAdapterLayerX86:25";
+            var webAdapterLayer = LayerVersion.fromLayerVersionArn(this, "LambdaWebAdapter", webAdapterLayerArn);
 
-        // Single Function URL for both SSE stream and provisioning — bypasses API Gateway's 29s timeout.
-        // RESPONSE_STREAM mode supports both streaming (SSE) and buffered responses.
-        FunctionUrl tenantFunctionUrl = tenantFn.addFunctionUrl(FunctionUrlOptions.builder()
-            .authType(FunctionUrlAuthType.AWS_IAM)
-            .invokeMode(InvokeMode.RESPONSE_STREAM)
-            .build());
+            tenantFn = Function.Builder.create(this, "EksDxTenantFunction")
+                .functionName("eks-d-xpress-tenant-service")
+                .runtime(jvmMode ? Runtime.JAVA_25 : Runtime.PROVIDED_AL2023)
+                .architecture(tenantArch)
+                .handler(jvmMode ? "run.sh" : "bootstrap")
+                .code(Code.fromAsset(tenantZip))
+                .layers(List.of(webAdapterLayer))
+                .memorySize(jvmMode ? 512 : 256)
+                .timeout(Duration.seconds(900))
+                .environment(java.util.Map.ofEntries(
+                    Map.entry("EKS_DX_TENANTS_TABLE", tenantsTable.getTableName()),
+                    Map.entry("EKS_DX_CLUSTERS_TABLE", clustersTable.getTableName()),
+                    Map.entry("EKS_DX_LT_ARM64_ONDEMAND", ltArm64Ondemand),
+                    Map.entry("EKS_DX_LT_ARM64_SPOT", ltArm64Spot),
+                    Map.entry("EKS_DX_LT_X86_ONDEMAND", ltX86Ondemand),
+                    Map.entry("EKS_DX_LT_X86_SPOT", ltX86Spot),
+                    Map.entry("EKS_DX_VPC_ID", vpcId),
+                    Map.entry("EKS_DX_KMS_CA_KEY_ID", caSigningKey.getKeyId()),
+                    Map.entry("EKS_DX_AVAILABILITY_ZONE", "auto"),
+                    Map.entry("EKS_DX_DRY_RUN", String.valueOf(dryRun)),
+                    Map.entry("EKS_DX_DEPLOYMENT_MODE", effectiveDeploymentMode),
+                    Map.entry("EKS_DX_MAX_TENANTS_PER_CALLER", maxTenantsPerCaller.getStringValue()),
+                    Map.entry("AWS_LWA_INVOKE_MODE", "response_stream"),
+                    Map.entry("AWS_LAMBDA_EXEC_WRAPPER", "/opt/bootstrap"),
+                    Map.entry("READINESS_CHECK_PATH", "/q/health/ready"),
+                    Map.entry("PORT", "8080")))
+                .logGroup(tenantLogGroup)
+                .build();
 
-        StringParameter.Builder.create(this, "TenantStreamUrlParam")
-            .parameterName("/eks-d-xpress/control-plane/api/stream-url")
-            .stringValue(tenantFunctionUrl.getUrl())
-            .description("EKS-DX tenant Function URL — used for both SSE stream and provisioning")
-            .build();
+            // Single Function URL for both SSE stream and provisioning
+            tenantFunctionUrl = tenantFn.addFunctionUrl(FunctionUrlOptions.builder()
+                .authType(FunctionUrlAuthType.AWS_IAM)
+                .invokeMode(InvokeMode.RESPONSE_STREAM)
+                .build());
 
-        // Provisioning URL reuses the same Function URL (Lambda supports only one Function URL)
-        StringParameter.Builder.create(this, "TenantProvisioningUrlParam")
-            .parameterName("/eks-d-xpress/control-plane/api/provisioning-url")
-            .stringValue(tenantFunctionUrl.getUrl())
-            .description("EKS-DX tenant provisioning Function URL — same as stream URL")
-            .build();
+            StringParameter.Builder.create(this, "TenantStreamUrlParam")
+                .parameterName("/eks-d-xpress/control-plane/api/stream-url")
+                .stringValue(tenantFunctionUrl.getUrl())
+                .description("EKS-DX tenant Function URL — used for both SSE stream and provisioning")
+                .build();
 
-        tenantsTable.grantReadWriteData(tenantFn);
-        clustersTable.grantReadWriteData(tenantFn);
-        // EC2: read-only on shared VPC infrastructure (Describe actions require Resource:"*" in IAM)
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "ec2:DescribeVpcs", "ec2:DescribeSubnets", "ec2:DescribeRouteTables",
-                "ec2:DescribeSecurityGroups", "ec2:DescribeAddresses", "ec2:DescribeSnapshots"))
-            .resources(List.of("*"))
-            .build());
-        // EC2: mutating actions scoped to shared VPC
-        String vpcArn = String.format("arn:aws:ec2:%s:%s:vpc/%s",
-            Stack.of(this).getRegion(), Stack.of(this).getAccount(), vpcId);
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "ec2:CreateSubnet", "ec2:DeleteSubnet",
-                "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
-                "ec2:AuthorizeSecurityGroupIngress", "ec2:AssociateRouteTable"))
-            .resources(List.of(vpcArn,
-                String.format("arn:aws:ec2:%s:%s:subnet/*", Stack.of(this).getRegion(), Stack.of(this).getAccount()),
-                String.format("arn:aws:ec2:%s:%s:security-group/*", Stack.of(this).getRegion(), Stack.of(this).getAccount()),
-                String.format("arn:aws:ec2:%s:%s:route-table/*", Stack.of(this).getRegion(), Stack.of(this).getAccount())))
-            .build());
-        // EC2: instance lifecycle + EIP/key creation (resources don't exist yet at creation time)
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "ec2:RunInstances", "ec2:TerminateInstances",
-                "ec2:StopInstances", "ec2:StartInstances",
-                "ec2:CreateKeyPair",
-                "ec2:DescribeInstances", "ec2:CreateTags",
-                "ec2:AllocateAddress", "ec2:AssociateAddress"))
-            .resources(List.of("*"))
-            .build());
-        // EC2: EIP release/disassociate — scoped to EIPs tagged project=eks-d-xpress
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of("ec2:ReleaseAddress", "ec2:DisassociateAddress"))
-            .resources(List.of(String.format("arn:aws:ec2:%s:%s:elastic-ip/*",
-                Stack.of(this).getRegion(), Stack.of(this).getAccount())))
-            .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/project", "eks-d-xpress")))
-            .build());
-        // EC2: key pair deletion — scoped to key pairs tagged project=eks-d-xpress
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of("ec2:DeleteKeyPair"))
-            .resources(List.of(String.format("arn:aws:ec2:%s:%s:key-pair/*",
-                Stack.of(this).getRegion(), Stack.of(this).getAccount())))
-            .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/project", "eks-d-xpress")))
-            .build());
-        // EC2: snapshot deletion — scoped to snapshots tagged Platform=eks-d-xpress
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of("ec2:DeleteSnapshot"))
-            .resources(List.of(String.format("arn:aws:ec2:%s::snapshot/*",
-                Stack.of(this).getRegion())))
-            .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/Platform", "eks-d-xpress")))
-            .build());
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "iam:CreateRole", "iam:DeleteRole",
-                "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:PassRole", "iam:TagRole",
-                "iam:AttachRolePolicy", "iam:DetachRolePolicy",
-                "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
-                "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile",
-                "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile"))
-            .resources(List.of("arn:aws:iam::*:role/eks-dx-tenant-*",
-                "arn:aws:iam::*:instance-profile/eks-dx-tenant-*"))
-            .build());
-        // DLM: etcd backup lifecycle policies
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "dlm:CreateLifecyclePolicy",
-                "dlm:DeleteLifecyclePolicy",
-                "dlm:GetLifecyclePolicies",
-                "dlm:TagResource"))
-            .resources(List.of("*"))
-            .build());
-        // SQS: Karpenter interruption queue + per-tenant progress FIFO queue
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "sqs:CreateQueue", "sqs:DeleteQueue", "sqs:GetQueueUrl",
-                "sqs:TagQueue", "sqs:ReceiveMessage", "sqs:DeleteMessage"))
-            .resources(List.of(String.format("arn:aws:sqs:%s:%s:eks-dx-tenant-*",
-                Stack.of(this).getRegion(), Stack.of(this).getAccount())))
-            .build());
-        // EventBridge: spot interruption rules
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "events:PutRule", "events:PutTargets",
-                "events:RemoveTargets", "events:DeleteRule"))
-            .resources(List.of(String.format("arn:aws:events:%s:%s:rule/eks-dx-tenant-*",
-                Stack.of(this).getRegion(), Stack.of(this).getAccount())))
-            .build());
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of(
-                "secretsmanager:CreateSecret",
-                "secretsmanager:DeleteSecret",
-                "secretsmanager:GetSecretValue"))
-            .resources(List.of(
-                "arn:aws:secretsmanager:*:*:secret:eks-dx/tenant/*"))
-            .build());
-        // KMS: sign tenant CA certificates
-        caSigningKey.grant(tenantFn, "kms:Sign");
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of("sts:GetCallerIdentity"))
-            .resources(List.of("*"))
-            .build());
-        tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
-            .actions(List.of("ssm:GetParameter"))
-            .resources(List.of(
-                String.format("arn:aws:ssm:%s:%s:parameter%s",
-                    Stack.of(this).getRegion(), Stack.of(this).getAccount(), endpointParamName),
-                String.format("arn:aws:ssm:%s:%s:parameter/eks-d-xpress/infra/ami/*",
+            StringParameter.Builder.create(this, "TenantProvisioningUrlParam")
+                .parameterName("/eks-d-xpress/control-plane/api/provisioning-url")
+                .stringValue(tenantFunctionUrl.getUrl())
+                .description("EKS-DX tenant provisioning Function URL — same as stream URL")
+                .build();
+
+            tenantsTable.grantReadWriteData(tenantFn);
+            clustersTable.grantReadWriteData(tenantFn);
+            // EC2: read-only on shared VPC infrastructure
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "ec2:DescribeVpcs", "ec2:DescribeSubnets", "ec2:DescribeRouteTables",
+                    "ec2:DescribeSecurityGroups", "ec2:DescribeAddresses", "ec2:DescribeSnapshots"))
+                .resources(List.of("*"))
+                .build());
+            // EC2: mutating actions scoped to shared VPC
+            String vpcArn = String.format("arn:aws:ec2:%s:%s:vpc/%s",
+                Stack.of(this).getRegion(), Stack.of(this).getAccount(), vpcId);
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "ec2:CreateSubnet", "ec2:DeleteSubnet",
+                    "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup",
+                    "ec2:AuthorizeSecurityGroupIngress", "ec2:AssociateRouteTable"))
+                .resources(List.of(vpcArn,
+                    String.format("arn:aws:ec2:%s:%s:subnet/*", Stack.of(this).getRegion(), Stack.of(this).getAccount()),
+                    String.format("arn:aws:ec2:%s:%s:security-group/*", Stack.of(this).getRegion(), Stack.of(this).getAccount()),
+                    String.format("arn:aws:ec2:%s:%s:route-table/*", Stack.of(this).getRegion(), Stack.of(this).getAccount())))
+                .build());
+            // EC2: instance lifecycle + EIP/key creation
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "ec2:RunInstances", "ec2:TerminateInstances",
+                    "ec2:StopInstances", "ec2:StartInstances",
+                    "ec2:CreateKeyPair",
+                    "ec2:DescribeInstances", "ec2:CreateTags",
+                    "ec2:AllocateAddress", "ec2:AssociateAddress"))
+                .resources(List.of("*"))
+                .build());
+            // EC2: EIP release/disassociate — scoped to EIPs tagged project=eks-d-xpress
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of("ec2:ReleaseAddress", "ec2:DisassociateAddress"))
+                .resources(List.of(String.format("arn:aws:ec2:%s:%s:elastic-ip/*",
                     Stack.of(this).getRegion(), Stack.of(this).getAccount())))
-            .build());
+                .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/project", "eks-d-xpress")))
+                .build());
+            // EC2: key pair deletion — scoped to key pairs tagged project=eks-d-xpress
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of("ec2:DeleteKeyPair"))
+                .resources(List.of(String.format("arn:aws:ec2:%s:%s:key-pair/*",
+                    Stack.of(this).getRegion(), Stack.of(this).getAccount())))
+                .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/project", "eks-d-xpress")))
+                .build());
+            // EC2: snapshot deletion — scoped to snapshots tagged Platform=eks-d-xpress
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of("ec2:DeleteSnapshot"))
+                .resources(List.of(String.format("arn:aws:ec2:%s::snapshot/*",
+                    Stack.of(this).getRegion())))
+                .conditions(Map.of("StringEquals", Map.of("aws:ResourceTag/Platform", "eks-d-xpress")))
+                .build());
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "iam:CreateRole", "iam:DeleteRole",
+                    "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:PassRole", "iam:TagRole",
+                    "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+                    "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+                    "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile",
+                    "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile"))
+                .resources(List.of("arn:aws:iam::*:role/eks-dx-tenant-*",
+                    "arn:aws:iam::*:instance-profile/eks-dx-tenant-*"))
+                .build());
+            // DLM: etcd backup lifecycle policies
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "dlm:CreateLifecyclePolicy",
+                    "dlm:DeleteLifecyclePolicy",
+                    "dlm:GetLifecyclePolicies",
+                    "dlm:TagResource"))
+                .resources(List.of("*"))
+                .build());
+            // SQS: Karpenter interruption queue + per-tenant progress FIFO queue
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "sqs:CreateQueue", "sqs:DeleteQueue", "sqs:GetQueueUrl",
+                    "sqs:TagQueue", "sqs:ReceiveMessage", "sqs:DeleteMessage"))
+                .resources(List.of(String.format("arn:aws:sqs:%s:%s:eks-dx-tenant-*",
+                    Stack.of(this).getRegion(), Stack.of(this).getAccount())))
+                .build());
+            // EventBridge: spot interruption rules
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "events:PutRule", "events:PutTargets",
+                    "events:RemoveTargets", "events:DeleteRule"))
+                .resources(List.of(String.format("arn:aws:events:%s:%s:rule/eks-dx-tenant-*",
+                    Stack.of(this).getRegion(), Stack.of(this).getAccount())))
+                .build());
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of(
+                    "secretsmanager:CreateSecret",
+                    "secretsmanager:DeleteSecret",
+                    "secretsmanager:GetSecretValue"))
+                .resources(List.of(
+                    "arn:aws:secretsmanager:*:*:secret:eks-dx/tenant/*"))
+                .build());
+            // KMS: sign tenant CA certificates
+            caSigningKey.grant(tenantFn, "kms:Sign");
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of("sts:GetCallerIdentity"))
+                .resources(List.of("*"))
+                .build());
+            tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
+                .actions(List.of("ssm:GetParameter"))
+                .resources(List.of(
+                    String.format("arn:aws:ssm:%s:%s:parameter%s",
+                        Stack.of(this).getRegion(), Stack.of(this).getAccount(), endpointParamName),
+                    String.format("arn:aws:ssm:%s:%s:parameter/eks-d-xpress/infra/ami/*",
+                        Stack.of(this).getRegion(), Stack.of(this).getAccount())))
+                .build());
+        } // end deployTenantService
 
         // -----------------------------------------------------------------------
         // API routes — explicit methods with correct auth per route
         // -----------------------------------------------------------------------
         LambdaIntegration credentialInteg = new LambdaIntegration(credentialFn);
         LambdaIntegration mgmtInteg = new LambdaIntegration(mgmtFn);
-        LambdaIntegration tenantInteg = new LambdaIntegration(tenantFn);
 
         MethodOptions iamAuth = MethodOptions.builder().authorizationType(AuthorizationType.IAM).build();
         MethodOptions noAuth = MethodOptions.builder().authorizationType(AuthorizationType.NONE).build();
@@ -561,9 +583,11 @@ public class EksDXpressControlPlaneStack extends Stack {
             .condition(hasCustomDomain)
             .build();
 
-        CfnOutput.Builder.create(this, "TenantStreamFunctionUrl")
-            .description("Lambda Function URL for SSE tenant progress stream")
-            .value(tenantFunctionUrl.getUrl()).build();
+        if (deployTenantService) {
+            CfnOutput.Builder.create(this, "TenantStreamFunctionUrl")
+                .description("Lambda Function URL for SSE tenant progress stream")
+                .value(tenantFunctionUrl.getUrl()).build();
+        }
 
         CfnOutput.Builder.create(this, "ClustersTableName")
             .value(clustersTable.getTableName()).build();
@@ -571,8 +595,10 @@ public class EksDXpressControlPlaneStack extends Stack {
         CfnOutput.Builder.create(this, "AssociationsTableName")
             .value(associationsTable.getTableName()).build();
 
-        CfnOutput.Builder.create(this, "TenantsTableName")
-            .value(tenantsTable.getTableName()).build();
+        if (deployTenantService) {
+            CfnOutput.Builder.create(this, "TenantsTableName")
+                .value(tenantsTable.getTableName()).build();
+        }
 
         CfnOutput.Builder.create(this, "CredentialFunctionName")
             .value(credentialFn.getFunctionName()).build();
@@ -580,8 +606,14 @@ public class EksDXpressControlPlaneStack extends Stack {
         CfnOutput.Builder.create(this, "MgmtFunctionName")
             .value(mgmtFn.getFunctionName()).build();
 
-        CfnOutput.Builder.create(this, "TenantFunctionName")
-            .value(tenantFn.getFunctionName()).build();
+        if (deployTenantService) {
+            CfnOutput.Builder.create(this, "TenantFunctionName")
+                .value(tenantFn.getFunctionName()).build();
+        }
+
+        CfnOutput.Builder.create(this, "DeploymentMode")
+            .description("Current deployment mode (self-managed, managed, or hybrid)")
+            .value(deploymentMode).build();
 
         CfnOutput.Builder.create(this, "EksDxCliPolicyResource")
             .description("IAM resource ARN for CLI execute-api:Invoke policy")

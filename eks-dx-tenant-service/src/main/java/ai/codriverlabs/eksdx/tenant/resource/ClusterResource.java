@@ -11,6 +11,7 @@ import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.util.Map;
@@ -30,6 +31,9 @@ public class ClusterResource {
     private static final Logger LOG = Logger.getLogger(ClusterResource.class);
 
     @Inject TenantProvisioningService provisioningService;
+
+    @ConfigProperty(name = "eks-dx.deployment-mode", defaultValue = "hybrid")
+    String deploymentMode;
 
     public static class CreateClusterRequest {
         @JsonProperty("clusterName") public String clusterName;
@@ -60,6 +64,12 @@ public class ClusterResource {
 
             // Server infers mode: jwks present → self-managed, otherwise → managed
             boolean selfManaged = (request.jwks != null && !request.jwks.isBlank());
+
+            // Guard: managed-only mode rejects self-managed registration
+            if (selfManaged && "managed".equals(deploymentMode)) {
+                return error(400, "InvalidParameterException",
+                    "Self-managed cluster registration is disabled in managed-only deployment mode");
+            }
 
             if (selfManaged) {
                 return createSelfManaged(request, callerArn);
