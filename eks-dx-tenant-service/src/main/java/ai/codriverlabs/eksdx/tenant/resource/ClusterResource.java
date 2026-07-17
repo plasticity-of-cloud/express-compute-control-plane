@@ -47,6 +47,13 @@ public class ClusterResource {
         // Self-managed mode fields (presence triggers self-managed)
         @JsonProperty("jwks") public String jwks;
         @JsonProperty("issuer") public String issuer;
+        // Cluster type (defaults to EKS_DX if absent — backward compatible)
+        @JsonProperty("clusterType") public String clusterType;
+        // Provider-specific metadata (stored in DynamoDB for provider resolution)
+        @JsonProperty("eksClusterName") public String eksClusterName;
+        @JsonProperty("ecsClusterName") public String ecsClusterName;
+        @JsonProperty("clusterArn") public String clusterArn;
+        @JsonProperty("region") public String region;
     }
 
     @POST
@@ -131,7 +138,8 @@ public class ClusterResource {
             return error(400, "InvalidParameterException", "issuer is required for self-managed mode");
 
         String id = provisioningService.registerSelfManagedCluster(
-            request.clusterName, request.issuer, request.jwks, callerArn);
+            request.clusterName, request.issuer, request.jwks, callerArn,
+            request.clusterType, request.eksClusterName, request.ecsClusterName, request.clusterArn);
 
         return Response.status(201).entity(
             Map.of("tenantId", id, "clusterName", request.clusterName, "managed", false)).build();

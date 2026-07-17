@@ -222,7 +222,8 @@ class TenantProvisioningServiceTest {
         ClusterAlreadyExistsException ex = assertThrows(
             ClusterAlreadyExistsException.class,
             () -> service.registerSelfManagedCluster(
-                "k3s-prod", "https://k8s.example.com", "{\"keys\":[]}", "arn:aws:iam::123:role/dev"));
+                "k3s-prod", "https://k8s.example.com", "{\"keys\":[]}", "arn:aws:iam::123:role/dev",
+                null, null, null, null));
 
         assertEquals("k3s-prod", ex.getClusterName());
         verify(dynamoDb, never()).putItem(any(PutItemRequest.class));
@@ -235,7 +236,8 @@ class TenantProvisioningServiceTest {
             .thenReturn(GetItemResponse.builder().build());
 
         String tenantId = service.registerSelfManagedCluster(
-            "new-k3s", "https://k8s.example.com", "{\"keys\":[]}", "arn:aws:iam::123:role/dev");
+            "new-k3s", "https://k8s.example.com", "{\"keys\":[]}", "arn:aws:iam::123:role/dev",
+            null, null, null, null);
 
         assertNotNull(tenantId);
         // Expects 2 putItem calls: cluster record + tenant record

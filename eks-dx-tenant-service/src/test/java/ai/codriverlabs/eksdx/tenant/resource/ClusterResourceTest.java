@@ -85,7 +85,7 @@ class ClusterResourceTest {
 
     @Test
     void selfManagedMode_duplicateClusterName_returns409() {
-        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any()))
+        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any(), any(), any(), any(), any()))
             .thenThrow(new ClusterAlreadyExistsException("k3s-cluster"));
 
         Response r = resource.createCluster(selfManagedReq("k3s-cluster"), ctx);
@@ -97,7 +97,7 @@ class ClusterResourceTest {
 
     @Test
     void selfManagedMode_duplicateClusterName_messageIsActionable() {
-        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any()))
+        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any(), any(), any(), any(), any()))
             .thenThrow(new ClusterAlreadyExistsException("k3s-cluster"));
 
         Response r = resource.createCluster(selfManagedReq("k3s-cluster"), ctx);
@@ -125,7 +125,7 @@ class ClusterResourceTest {
 
     @Test
     void selfManagedMode_newClusterName_returns201() {
-        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any()))
+        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any(), any(), any(), any(), any()))
             .thenReturn("def456");
 
         Response r = resource.createCluster(selfManagedReq("new-k3s"), ctx);
@@ -188,7 +188,7 @@ class ClusterResourceTest {
     @Test
     void hybridMode_allowsSelfManagedRegistration() throws Exception {
         setField("deploymentMode", "hybrid");
-        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any()))
+        when(provisioningService.registerSelfManagedCluster(any(), any(), any(), any(), any(), any(), any(), any()))
             .thenReturn("abc123");
 
         Response r = resource.createCluster(selfManagedReq("k3s-cluster"), ctx);

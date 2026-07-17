@@ -924,8 +924,11 @@ public class TenantProvisioningService {
     /**
      * Register a self-managed cluster (no EC2 provisioning, no PKI generation).
      * Stores cluster record with user-provided JWKS and issuer.
+     * Accepts optional clusterType and provider-specific metadata for PRO providers.
      */
-    public String registerSelfManagedCluster(String clusterName, String issuer, String jwks, String ownerArn) {
+    public String registerSelfManagedCluster(String clusterName, String issuer, String jwks, String ownerArn,
+                                              String clusterType, String eksClusterName,
+                                              String ecsClusterName, String clusterArn) {
         // Fail fast: check uniqueness before touching DynamoDB.
         if (clusterExists(clusterName)) {
             throw new ClusterAlreadyExistsException(clusterName);
@@ -941,6 +944,20 @@ public class TenantProvisioningService {
         clusterItem.put("ownerArn", AttributeValue.fromS(ownerArn));
         clusterItem.put("managed", AttributeValue.fromS("false"));
         clusterItem.put("createdAt", AttributeValue.fromS(Instant.now().toString()));
+        // Optional: cluster type for provider routing (defaults to EKS_DX if absent)
+        if (clusterType != null && !clusterType.isBlank()) {
+            clusterItem.put("clusterType", AttributeValue.fromS(clusterType));
+        }
+        // Optional: provider-specific metadata
+        if (eksClusterName != null && !eksClusterName.isBlank()) {
+            clusterItem.put("eksClusterName", AttributeValue.fromS(eksClusterName));
+        }
+        if (ecsClusterName != null && !ecsClusterName.isBlank()) {
+            clusterItem.put("ecsClusterName", AttributeValue.fromS(ecsClusterName));
+        }
+        if (clusterArn != null && !clusterArn.isBlank()) {
+            clusterItem.put("clusterArn", AttributeValue.fromS(clusterArn));
+        }
         try {
             dynamoDb.putItem(PutItemRequest.builder()
                 .tableName(clustersTable)
@@ -955,7 +972,8 @@ public class TenantProvisioningService {
         // Also write tenant record for consistency
         writeInitialRecord(tenantId, clusterName, false, ownerArn, ownerArn, Instant.now().toString(), null, null, null);
 
-        LOG.infof("Registered self-managed cluster %s (tenant %s)", clusterName, tenantId);
+        LOG.infof("Registered self-managed cluster %s (tenant %s, type %s)", clusterName, tenantId,
+            clusterType != null ? clusterType : "EKS_DX");
         return tenantId;
     }
 
