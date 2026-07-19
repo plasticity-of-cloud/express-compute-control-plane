@@ -1,0 +1,43 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ecp-karpenter-support
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ecp-karpenter-support
+rules:
+  # ClusterIdentityService: read cluster bootstrap ConfigMaps
+  # (apiServerEndpoint resolved via client.getMasterUrl() — no endpoints permission needed)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kube-root-ca.crt", "kubeadm-config", "ecp-config"]
+    verbs: ["get"]
+  # Reconciler: watch EC2NodeClass resources
+  - apiGroups: ["karpenter.k8s.aws"]
+    resources: ["ec2nodeclasses"]
+    verbs: ["get", "list", "watch"]
+  # Reconciler: patch status subresource (ValidationSucceeded condition)
+  - apiGroups: ["karpenter.k8s.aws"]
+    resources: ["ec2nodeclasses/status"]
+    verbs: ["patch"]
+  # Leader election (Coordination API)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ecp-karpenter-support
+subjects:
+  - kind: ServiceAccount
+    name: ecp-karpenter-support
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: ecp-karpenter-support
+  apiGroup: rbac.authorization.k8s.io

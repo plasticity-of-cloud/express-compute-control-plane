@@ -5,19 +5,19 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>ai.codriverlabs</groupId>
-  <artifactId>aws-eks-auth-parent</artifactId>
+  <artifactId>express-compute-parent</artifactId>
   <version>1.0.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <modules>
-    <module>eks-dx-model</module>
-    <module>eks-dx-credential-service</module>
-    <module>eks-dx-mgmt-service</module>
-    <module>eks-dx-tenant-service</module>
-    <module>eks-dx-auth-proxy</module>
-    <module>eks-dx-pod-identity-webhook</module>
-    <module>eks-dx-karpenter-support</module>
-    <module>eks-dx-cli</module>
+    <module>ecp-model</module>
+    <module>ecp-credential-service</module>
+    <module>ecp-mgmt-service</module>
+    <module>ecp-tenant-service</module>
+    <module>ecp-auth-proxy</module>
+    <module>ecp-workload-identity-webhook</module>
+    <module>ecp-karpenter-support</module>
+    <module>ecp-cli</module>
     <module>infra</module>
   </modules>
 
@@ -37,7 +37,7 @@
     <repository>
       <id>github</id>
       <name>GitHub Packages</name>
-      <url>https://maven.pkg.github.com/plasticity-of-cloud/eks-d-xpress-control-plane</url>
+      <url>https://maven.pkg.github.com/codriverlabs/express-compute-control-plane</url>
     </repository>
   </distributionManagement>
 </project>

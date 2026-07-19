@@ -25,12 +25,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if ! $FORCE; then
-  read -r -p "Destroy EksDXpressControlPlaneStack? This is irreversible. [y/N] " confirm
+  read -r -p "Destroy ECPpressControlPlaneStack? This is irreversible. [y/N] " confirm
   [[ "$confirm" =~ ^[yY]$ ]] || { echo "Aborted."; exit 0; }
 fi
 
 echo "==> Destroying CDK stack"
 cd infra
-cdk destroy EksDXpressControlPlaneStack --force $AWS_PROFILE_ARG
+cdk destroy ECPpressControlPlaneStack --force $AWS_PROFILE_ARG
 
 echo "==> Stack destroyed"

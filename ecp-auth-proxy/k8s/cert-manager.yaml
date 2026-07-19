@@ -1,0 +1,46 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-auth-proxy-selfsigned
+  namespace: kube-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-auth-proxy-ca
+  namespace: kube-system
+spec:
+  isCA: true
+  commonName: ecp-auth-proxy-ca
+  secretName: ecp-auth-proxy-ca
+  issuerRef:
+    name: ecp-auth-proxy-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-auth-proxy-ca
+  namespace: kube-system
+spec:
+  ca:
+    secretName: ecp-auth-proxy-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-auth-proxy-cert
+  namespace: kube-system
+spec:
+  secretName: ecp-auth-proxy-tls
+  duration: 8760h   # 1 year
+  renewBefore: 720h # 30 days
+  issuerRef:
+    name: ecp-auth-proxy-ca
+    kind: Issuer
+  dnsNames:
+  - ecp-auth-proxy.kube-system.svc
+  - ecp-auth-proxy.kube-system.svc.cluster.local

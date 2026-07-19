@@ -35,5 +35,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mvn -B deploy -DskipTests \
-            -pl eks-dx-model,eks-dx-cli \
+            -pl ecp-model,ecp-cli \
             -DaltDeploymentRepository=github::default::https://maven.pkg.github.com/${{ github.repository }}

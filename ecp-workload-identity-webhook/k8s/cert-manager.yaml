@@ -1,0 +1,48 @@
+---
+# Self-signed issuer (bootstraps the CA)
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-workload-identity-webhook-selfsigned
+  namespace: kube-system
+spec:
+  selfSigned: {}
+---
+# CA certificate issued by the self-signed issuer
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-workload-identity-webhook-ca
+  namespace: kube-system
+spec:
+  isCA: true
+  commonName: ecp-workload-identity-webhook-ca
+  secretName: ecp-workload-identity-webhook-ca
+  issuerRef:
+    name: ecp-workload-identity-webhook-selfsigned
+    kind: Issuer
+---
+# CA-backed issuer used to sign the serving certificate
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-workload-identity-webhook-ca
+  namespace: kube-system
+spec:
+  ca:
+    secretName: ecp-workload-identity-webhook-ca
+---
+# Serving certificate for the webhook (injected into /tls by cert-manager)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-workload-identity-webhook-cert
+  namespace: kube-system
+spec:
+  secretName: ecp-workload-identity-webhook-tls
+  issuerRef:
+    name: ecp-workload-identity-webhook-ca
+    kind: Issuer
+  dnsNames:
+    - ecp-workload-identity-webhook.kube-system.svc
+    - ecp-workload-identity-webhook.kube-system.svc.cluster.local

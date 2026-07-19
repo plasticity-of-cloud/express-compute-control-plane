@@ -1,0 +1,88 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: express-compute-pod-identity-webhook
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: express-compute-pod-identity-webhook
+subjects:
+- kind: ServiceAccount
+  name: express-compute-pod-identity-webhook
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: express-compute-pod-identity-webhook
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: express-compute-pod-identity-webhook-selfsigned
+  namespace: kube-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: express-compute-pod-identity-webhook-ca
+  namespace: kube-system
+spec:
+  isCA: true
+  commonName: express-compute-pod-identity-webhook-ca
+  secretName: express-compute-pod-identity-webhook-ca
+  issuerRef:
+    name: express-compute-pod-identity-webhook-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: express-compute-pod-identity-webhook-ca
+  namespace: kube-system
+spec:
+  ca:
+    secretName: express-compute-pod-identity-webhook-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: express-compute-pod-identity-webhook-cert
+  namespace: kube-system
+spec:
+  secretName: express-compute-pod-identity-webhook-tls
+  issuerRef:
+    name: express-compute-pod-identity-webhook-ca
+    kind: Issuer
+  dnsNames:
+  - express-compute-pod-identity-webhook.kube-system.svc
+  - express-compute-pod-identity-webhook.kube-system.svc.cluster.local
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: express-compute-pod-identity-webhook
+  annotations:
+    cert-manager.io/inject-ca-from: kube-system/express-compute-pod-identity-webhook-cert
+webhooks:
+- name: pod-identity.codriverlabs.ai
+  rules:
+  - apiGroups: [""]
+    apiVersions: ["v1"]
+    operations: ["CREATE"]
+    resources: ["pods"]
+    scope: Namespaced
+  clientConfig:
+    service:
+      namespace: kube-system
+      name: express-compute-pod-identity-webhook
+      path: /mutate
+      port: 8443
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  timeoutSeconds: 5
+  failurePolicy: Ignore

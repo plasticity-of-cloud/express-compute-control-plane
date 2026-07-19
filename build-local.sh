@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-local.sh — full local build of eks-dx-control-plane
+# build-local.sh — full local build of ecp-control-plane
 #
 # Usage:
 #   ./build-local.sh              # Build all modules (JVM mode)
@@ -91,7 +91,7 @@ ensure_ecr_repo() {
     || aws ecr create-repository --repository-name "$repo" --region "$ECR_REGION" --image-scanning-configuration scanOnPush=true --query 'repository.repositoryName' --output text
 }
 
-echo "==> Building eks-dx-control-plane (native=${NATIVE}, skipTests=${SKIP_TESTS}, only=${ONLY:-all}, push=${PUSH}, registry=${REGISTRY:-default}, release=${RELEASE_MODE})"
+echo "==> Building ecp-control-plane (native=${NATIVE}, skipTests=${SKIP_TESTS}, only=${ONLY:-all}, push=${PUSH}, registry=${REGISTRY:-default}, release=${RELEASE_MODE})"
 
 # ECR login if pushing to ECR
 if $PUSH && [[ "$REGISTRY" =~ \.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com ]]; then
@@ -108,55 +108,55 @@ echo "==> Image tag: ${IMAGE_TAG}"
 # 0. Parent POM + model (always — required for dependency resolution)
 echo "--- [0] parent pom + model"
 mvn -B -N install $SKIP_FLAG
-mvn -B -pl eks-dx-model install $SKIP_FLAG
+mvn -B -pl ecp-model install $SKIP_FLAG
 
 # 1. Credential service
 if should_build "credential"; then
   echo "--- credential-service"
-  mvn -B -pl eks-dx-credential-service clean package $SKIP_FLAG
+  mvn -B -pl ecp-credential-service clean package $SKIP_FLAG
 fi
 
 # 2. Mgmt service
 if should_build "mgmt"; then
   echo "--- mgmt-service"
-  mvn -B -pl eks-dx-mgmt-service clean package $SKIP_FLAG
+  mvn -B -pl ecp-mgmt-service clean package $SKIP_FLAG
 fi
 
 # 3. Tenant service
 if should_build "tenant"; then
   echo "--- tenant-service"
   if $NATIVE; then
-    mvn -B -pl eks-dx-tenant-service clean package $SKIP_FLAG -Pnative
+    mvn -B -pl ecp-tenant-service clean package $SKIP_FLAG -Pnative
   else
-    mvn -B -pl eks-dx-tenant-service clean package $SKIP_FLAG
+    mvn -B -pl ecp-tenant-service clean package $SKIP_FLAG
   fi
 fi
 
 # 4. Auth proxy
 if should_build "auth-proxy"; then
   echo "--- auth-proxy"
-  ensure_ecr_repo "codriverlabs/eks-d-xpress-auth-proxy"
-  mvn -B -pl eks-dx-auth-proxy clean package $SKIP_FLAG $(image_flags) \
+  ensure_ecr_repo "codriverlabs/express-compute-auth-proxy"
+  mvn -B -pl ecp-auth-proxy clean package $SKIP_FLAG $(image_flags) \
     -Dquarkus.helm.version=${IMAGE_TAG}
 fi
 
 # 5. Pod identity webhook
 if should_build "webhook"; then
   echo "--- pod-identity-webhook"
-  ensure_ecr_repo "codriverlabs/eks-d-xpress-pod-identity-webhook"
-  mvn -B -pl eks-dx-pod-identity-webhook clean package $SKIP_FLAG $(image_flags) \
+  ensure_ecr_repo "codriverlabs/express-compute-pod-identity-webhook"
+  mvn -B -pl ecp-workload-identity-webhook clean package $SKIP_FLAG $(image_flags) \
     -Dquarkus.helm.version=${IMAGE_TAG}
 fi
 
 # 5b. Karpenter support (EC2NodeClass webhook + ValidationSucceeded controller)
 if should_build "karpenter"; then
   echo "--- karpenter-support"
-  ensure_ecr_repo "plasticity-of-cloud/eks-d-xpress-karpenter-support"
+  ensure_ecr_repo "plasticity-of-cloud/express-compute-karpenter-support"
   if $NATIVE; then
-    mvn -B -pl eks-dx-karpenter-support clean package $SKIP_FLAG -Pnative $(image_flags) \
+    mvn -B -pl ecp-karpenter-support clean package $SKIP_FLAG -Pnative $(image_flags) \
       -Dquarkus.helm.version=${IMAGE_TAG}
   else
-    mvn -B -pl eks-dx-karpenter-support clean package $SKIP_FLAG -Pjib $(image_flags) \
+    mvn -B -pl ecp-karpenter-support clean package $SKIP_FLAG -Pjib $(image_flags) \
       -Dquarkus.helm.version=${IMAGE_TAG}
   fi
 fi
@@ -165,9 +165,9 @@ fi
 if should_build "cli"; then
   echo "--- cli"
   if $NATIVE; then
-    mvn -B -pl eks-dx-cli clean package $SKIP_FLAG -Pnative
+    mvn -B -pl ecp-cli clean package $SKIP_FLAG -Pnative
   else
-    mvn -B -pl eks-dx-cli clean package $SKIP_FLAG
+    mvn -B -pl ecp-cli clean package $SKIP_FLAG
   fi
 fi
 
@@ -176,9 +176,9 @@ if should_build "cdk"; then
   if [[ "${RELEASE_MODE}" == "true" ]]; then
     echo "--- cdk synth (release mode — assets/)"
     mkdir -p assets
-    [ -f eks-dx-credential-service/target/function.zip ] && cp eks-dx-credential-service/target/function.zip assets/credential-service.zip
-    [ -f eks-dx-mgmt-service/target/function.zip ] && cp eks-dx-mgmt-service/target/function.zip assets/mgmt-service.zip
-    [ -f eks-dx-tenant-service/target/function.zip ] && cp eks-dx-tenant-service/target/function.zip assets/tenant-service.zip
+    [ -f ecp-credential-service/target/function.zip ] && cp ecp-credential-service/target/function.zip assets/credential-service.zip
+    [ -f ecp-mgmt-service/target/function.zip ] && cp ecp-mgmt-service/target/function.zip assets/mgmt-service.zip
+    [ -f ecp-tenant-service/target/function.zip ] && cp ecp-tenant-service/target/function.zip assets/tenant-service.zip
     mvn -B -pl infra clean compile exec:java
   else
     echo "--- cdk validate (development mode — target/)"

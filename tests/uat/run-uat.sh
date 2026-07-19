@@ -38,7 +38,7 @@ if [[ "${NO_BUILD}" == "false" ]]; then
 fi
 
 # Locate the runner jar
-CLI_JAR="$(ls "${PROJECT_ROOT}"/eks-dx-cli/target/*-runner.jar 2>/dev/null | head -1)"
+CLI_JAR="$(ls "${PROJECT_ROOT}"/ecp-cli/target/*-runner.jar 2>/dev/null | head -1)"
 if [[ -z "${CLI_JAR}" ]]; then
     echo "ERROR: CLI jar not found. Run ./build-local.sh --only cli --skip-tests first."
     exit 1

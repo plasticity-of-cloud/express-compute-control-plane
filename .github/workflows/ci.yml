@@ -35,26 +35,26 @@ jobs:
 
       - name: Build Lambda function.zips
         run: |
-          mvn -B -pl eks-dx-model,eks-dx-credential-service package -DskipTests
-          mvn -B -pl eks-dx-model,eks-dx-mgmt-service package -DskipTests
-          mvn -B -pl eks-dx-model,eks-dx-tenant-service package -DskipTests
+          mvn -B -pl ecp-model,ecp-credential-service package -DskipTests
+          mvn -B -pl ecp-model,ecp-mgmt-service package -DskipTests
+          mvn -B -pl ecp-model,ecp-tenant-service package -DskipTests
 
       - name: Synth CDK stack
         run: mvn -B -pl infra compile exec:java -Ddevelopment=true
 
       - name: Build container images (JVM, no push)
         run: |
-          mvn -B -pl eks-dx-auth-proxy package -DskipTests \
+          mvn -B -pl ecp-auth-proxy package -DskipTests \
             -Dquarkus.container-image.build=true \
             -Dquarkus.container-image.push=false
-          mvn -B -pl eks-dx-pod-identity-webhook package -DskipTests \
+          mvn -B -pl ecp-workload-identity-webhook package -DskipTests \
             -Dquarkus.container-image.build=true \
             -Dquarkus.container-image.push=false
 
       - name: Lint Helm charts
         run: |
-          helm lint eks-dx-auth-proxy/target/helm/kubernetes/eks-d-xpress-auth-proxy
-          helm lint eks-dx-pod-identity-webhook/target/helm/kubernetes/eks-d-xpress-pod-identity-webhook
+          helm lint ecp-auth-proxy/target/helm/kubernetes/express-compute-auth-proxy
+          helm lint ecp-workload-identity-webhook/target/helm/kubernetes/express-compute-pod-identity-webhook
 
   integration-test:
     runs-on: ubuntu-24.04
@@ -76,7 +76,7 @@ jobs:
         env:
           AWS_REGION: us-east-1
         run: |
-          mvn -B -pl eks-dx-model,eks-dx-mgmt-service test \
+          mvn -B -pl ecp-model,ecp-mgmt-service test \
             -Dtest=DynamoDbIntegrationTest \
             -Dsurefire.failIfNoSpecifiedTests=false \
             -Dintegration.dynamodb=true \

@@ -8,7 +8,7 @@
 #   - helm 3 installed locally
 #
 # Usage:
-#   ./setup.sh --eks-dx-endpoint https://xxx.execute-api.us-east-1.amazonaws.com/prod \
+#   ./setup.sh --ecp-endpoint https://xxx.execute-api.us-east-1.amazonaws.com/prod \
 #     --version 1.0.0
 #
 # All AWS resources (key pair, security group, EC2 instance) are named after --cluster-name.
@@ -22,20 +22,20 @@ warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 err()  { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
 
 REGION="${AWS_REGION:-us-east-1}"
-CLUSTER_NAME="eks-dx-k3s"
+CLUSTER_NAME="ecp-k3s"
 INSTANCE_TYPE="t4g.medium"
-EKS_DX_ENDPOINT=""
-EKS_DX_VERSION=""          # e.g. 1.0.0 — pulls from GHCR when set
+ECP_ENDPOINT=""
+ECP_VERSION=""          # e.g. 1.0.0 — pulls from GHCR when set
 GITHUB_ORG="codriverlabs"
 SG_NAME=""  # derived from cluster name after arg parsing
 KEY_PAIR=""  # derived from cluster name after arg parsing
 
 usage() {
   cat <<EOF
-Usage: $0 --eks-dx-endpoint URL [OPTIONS]
+Usage: $0 --ecp-endpoint URL [OPTIONS]
 
 Required:
-  --eks-dx-endpoint URL     EKS-DX Lambda API endpoint
+  --ecp-endpoint URL     EKS-DX Lambda API endpoint
 
 Options:
   --cluster-name NAME       Cluster name          (default: $CLUSTER_NAME)
@@ -51,8 +51,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --eks-dx-endpoint)  EKS_DX_ENDPOINT="$2";  shift 2 ;;
-    --version)          EKS_DX_VERSION="$2";   shift 2 ;;
+    --ecp-endpoint)  ECP_ENDPOINT="$2";  shift 2 ;;
+    --version)          ECP_VERSION="$2";   shift 2 ;;
     --region)           REGION="$2";           shift 2 ;;
     --cluster-name)     CLUSTER_NAME="$2";     shift 2 ;;
     --instance-type)    INSTANCE_TYPE="$2";    shift 2 ;;
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -z "$EKS_DX_ENDPOINT" ]] && err "--eks-dx-endpoint is required"
+[[ -z "$ECP_ENDPOINT" ]] && err "--ecp-endpoint is required"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 KEY_PAIR="${CLUSTER_NAME}"
@@ -166,8 +166,8 @@ sed -i "s|https://127.0.0.1:6443|https://${PUBLIC_IP}:6443|g" "$KUBECONFIG_PATH"
 log "Kubeconfig ready: $KUBECONFIG_PATH"
 
 # ── 4. Install in-cluster components (if --version supplied) ──────────
-if [[ -n "$EKS_DX_VERSION" ]]; then
-  log "Installing EKS-DX Pod Identity components v${EKS_DX_VERSION} ..."
+if [[ -n "$ECP_VERSION" ]]; then
+  log "Installing EKS-DX Pod Identity components v${ECP_VERSION} ..."
   export KUBECONFIG="$KUBECONFIG_PATH"
 
   # cert-manager (required for webhook TLS)
@@ -176,11 +176,11 @@ if [[ -n "$EKS_DX_VERSION" ]]; then
     -n cert-manager --timeout=120s
 
   # Run the canonical install script released alongside this version
-  curl -sL "https://github.com/plasticity-of-cloud/eks-d-xpress-control-plane/releases/download/v${EKS_DX_VERSION}/install-eks-dx-pod-identity-${EKS_DX_VERSION}.sh" \
-    | EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}" \
+  curl -sL "https://github.com/plasticity-of-cloud/express-compute-control-plane/releases/download/v${ECP_VERSION}/install-ecp-pod-identity-${ECP_VERSION}.sh" \
+    | ECP_ENDPOINT="${ECP_ENDPOINT}" \
       CLUSTER_NAME="${CLUSTER_NAME}" \
       AWS_REGION="${REGION}" \
-      EKS_DX_VERSION="${EKS_DX_VERSION}" \
+      ECP_VERSION="${ECP_VERSION}" \
       bash
 
   log "In-cluster components installed."
@@ -195,28 +195,28 @@ ${GREEN}════════════════════════
   Instance:  $INSTANCE_ID ($PUBLIC_IP)
   Region:    $REGION
   Cluster:   $CLUSTER_NAME
-  Endpoint:  $EKS_DX_ENDPOINT
+  Endpoint:  $ECP_ENDPOINT
   Kubeconfig: $KUBECONFIG_PATH
 
   ${YELLOW}Next steps:${NC}
 
   1. Register the cluster:
        export KUBECONFIG=$KUBECONFIG_PATH
-       eks-dx configure --endpoint ${EKS_DX_ENDPOINT} --region ${REGION}
-       eks-dx create-cluster --oidc-mode self-managed --name ${CLUSTER_NAME} --region ${REGION}
+       ecp configure --endpoint ${ECP_ENDPOINT} --region ${REGION}
+       ecp create-cluster --oidc-mode self-managed --name ${CLUSTER_NAME} --region ${REGION}
 
   2. Create associations:
-       eks-dx create-association \\
+       ecp create-association \\
          --cluster-name ${CLUSTER_NAME} \\
          --namespace default --service-account my-app \\
-         --role-arn arn:aws:iam::${ACCOUNT_ID}:role/eks-dx-pod-my-app
+         --role-arn arn:aws:iam::${ACCOUNT_ID}:role/ecp-pod-my-app
 
-$(if [[ -z "$EKS_DX_VERSION" ]]; then
+$(if [[ -z "$ECP_VERSION" ]]; then
   echo "  3. Deploy in-cluster components:"
   echo "       See: docs/user-guides/ec2-k3s-pod-identity/README.md"
   echo "       Or re-run with --version <version> to install from GHCR automatically."
 else
-  echo "  In-cluster components (auth-proxy, webhook) installed from GHCR v${EKS_DX_VERSION}."
+  echo "  In-cluster components (auth-proxy, webhook) installed from GHCR v${ECP_VERSION}."
   echo "  3. Deploy EKS Pod Identity Agent — see README.md step 5."
 fi)
 

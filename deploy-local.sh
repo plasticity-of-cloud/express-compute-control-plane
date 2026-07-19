@@ -58,14 +58,14 @@ if ! $SKIP_BUILD; then
   echo "==> Building Lambda zips"
   mvn -B -N install -DskipTests
 
-  mvn -B -pl eks-dx-model install -DskipTests
-  mvn -B -pl eks-dx-credential-service package -DskipTests
-  mvn -B -pl eks-dx-mgmt-service package -DskipTests
+  mvn -B -pl ecp-model install -DskipTests
+  mvn -B -pl ecp-credential-service package -DskipTests
+  mvn -B -pl ecp-mgmt-service package -DskipTests
 
   if $NATIVE; then
-    mvn -B -pl eks-dx-tenant-service package -DskipTests -Pnative
+    mvn -B -pl ecp-tenant-service package -DskipTests -Pnative
   else
-    mvn -B -pl eks-dx-tenant-service package -DskipTests
+    mvn -B -pl ecp-tenant-service package -DskipTests
   fi
   echo "==> Build complete"
 fi
@@ -81,7 +81,7 @@ fi
 cd infra
 rm -rf cdk.out
 cdk synth --context development=true
-cdk deploy EksDXpressControlPlaneStack \
+cdk deploy ExpressComputeControlPlaneStack \
   --require-approval never \
   --context development=true \
   $AWS_PROFILE_ARG \
@@ -91,5 +91,5 @@ cdk deploy EksDXpressControlPlaneStack \
 echo ""
 echo "==> Deploy complete"
 
-echo "Removing configuration file $HOME/.eks-d-xpress/config, as URL changed" 
-rm -rf $HOME/.eks-d-xpress/config
+echo "Removing configuration file $HOME/.express-compute/config, as URL changed" 
+rm -rf $HOME/.express-compute/config

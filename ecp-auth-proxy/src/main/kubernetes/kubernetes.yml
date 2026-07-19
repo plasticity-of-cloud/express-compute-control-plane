@@ -1,0 +1,68 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: express-compute-auth-proxy
+rules:
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: express-compute-auth-proxy
+subjects:
+- kind: ServiceAccount
+  name: express-compute-auth-proxy
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: express-compute-auth-proxy
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: express-compute-auth-proxy-selfsigned
+  namespace: kube-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: express-compute-auth-proxy-ca
+  namespace: kube-system
+spec:
+  isCA: true
+  commonName: express-compute-auth-proxy-ca
+  secretName: express-compute-auth-proxy-ca
+  issuerRef:
+    name: express-compute-auth-proxy-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: express-compute-auth-proxy-ca
+  namespace: kube-system
+spec:
+  ca:
+    secretName: express-compute-auth-proxy-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: express-compute-auth-proxy-cert
+  namespace: kube-system
+spec:
+  secretName: express-compute-auth-proxy-tls
+  duration: 8760h
+  renewBefore: 720h
+  issuerRef:
+    name: express-compute-auth-proxy-ca
+    kind: Issuer
+  dnsNames:
+  - express-compute-auth-proxy.kube-system.svc
+  - express-compute-auth-proxy.kube-system.svc.cluster.local

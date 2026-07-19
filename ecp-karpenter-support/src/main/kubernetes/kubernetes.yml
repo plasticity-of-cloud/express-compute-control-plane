@@ -1,0 +1,116 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ecp-karpenter-support
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["kube-root-ca.crt", "kubeadm-config", "ecp-config"]
+    verbs: ["get"]
+  - apiGroups: ["karpenter.k8s.aws"]
+    resources: ["ec2nodeclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["karpenter.sh"]
+    resources: ["nodepools"]
+    verbs: ["get", "list"]
+  - apiGroups: ["karpenter.k8s.aws"]
+    resources: ["ec2nodeclasses/status"]
+    verbs: ["patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ecp-karpenter-support
+subjects:
+- kind: ServiceAccount
+  name: ecp-karpenter-support
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: ecp-karpenter-support
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-karpenter-support-selfsigned
+  namespace: kube-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-karpenter-support-ca
+  namespace: kube-system
+spec:
+  isCA: true
+  commonName: ecp-karpenter-support-ca
+  secretName: ecp-karpenter-support-ca
+  issuerRef:
+    name: ecp-karpenter-support-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-karpenter-support-ca
+  namespace: kube-system
+spec:
+  ca:
+    secretName: ecp-karpenter-support-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-karpenter-support-cert
+  namespace: kube-system
+spec:
+  secretName: ecp-karpenter-support-tls
+  issuerRef:
+    name: ecp-karpenter-support-ca
+    kind: Issuer
+  dnsNames:
+  - ecp-karpenter-support.kube-system.svc
+  - ecp-karpenter-support.kube-system.svc.cluster.local
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: ecp-karpenter-support
+  annotations:
+    cert-manager.io/inject-ca-from: kube-system/ecp-karpenter-support-cert
+webhooks:
+- name: ec2nodeclass.ecp.codriverlabs.ai
+  rules:
+  - apiGroups: ["karpenter.k8s.aws"]
+    apiVersions: ["v1"]
+    operations: ["CREATE", "UPDATE"]
+    resources: ["ec2nodeclasses"]
+  clientConfig:
+    service:
+      namespace: kube-system
+      name: ecp-karpenter-support
+      path: /mutate-ec2nodeclass
+      port: 443
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  timeoutSeconds: 5
+  failurePolicy: Ignore
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ecp-config
+  namespace: kube-system
+data:
+  cluster-name: ""
+  tenant-id: ""
+  nat-gateway-enabled: "false"
+  public-subnet-id: ""
+  private-subnet-id: ""
+  security-group-id: ""

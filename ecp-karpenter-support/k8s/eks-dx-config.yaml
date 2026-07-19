@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ecp-config
+  namespace: kube-system
+data:
+  cluster-name: "{{ .Values.clusterIdentity.clusterName }}"
+  tenant-id: "{{ .Values.clusterIdentity.tenantId }}"
+  nat-gateway-enabled: "{{ .Values.clusterIdentity.natGatewayEnabled }}"
+  public-subnet-id: "{{ .Values.clusterIdentity.publicSubnetId }}"
+  private-subnet-id: "{{ .Values.clusterIdentity.privateSubnetId }}"
+  security-group-id: "{{ .Values.clusterIdentity.securityGroupId }}"

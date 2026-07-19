@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: ecp-karpenter-support
+  annotations:
+    cert-manager.io/inject-ca-from: kube-system/ecp-karpenter-support-cert
+webhooks:
+  - name: ec2nodeclass.ecp.codriverlabs.ai
+    rules:
+      - apiGroups:   ["karpenter.k8s.aws"]
+        apiVersions: ["v1"]
+        operations:  ["CREATE", "UPDATE"]
+        resources:   ["ec2nodeclasses"]
+    clientConfig:
+      service:
+        namespace: kube-system
+        name: ecp-karpenter-support
+        path: /mutate-ec2nodeclass
+        port: 8443
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    # Intentional: webhook outage must NOT block Karpenter from functioning
+    failurePolicy: Ignore

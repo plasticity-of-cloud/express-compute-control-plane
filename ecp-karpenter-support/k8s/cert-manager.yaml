@@ -1,0 +1,44 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-karpenter-support-selfsigned
+  namespace: kube-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-karpenter-support-ca
+  namespace: kube-system
+spec:
+  isCA: true
+  commonName: ecp-karpenter-support-ca
+  secretName: ecp-karpenter-support-ca
+  issuerRef:
+    name: ecp-karpenter-support-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ecp-karpenter-support-ca
+  namespace: kube-system
+spec:
+  ca:
+    secretName: ecp-karpenter-support-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ecp-karpenter-support-cert
+  namespace: kube-system
+spec:
+  secretName: ecp-karpenter-support-tls
+  issuerRef:
+    name: ecp-karpenter-support-ca
+    kind: Issuer
+  dnsNames:
+    - ecp-karpenter-support.kube-system.svc
+    - ecp-karpenter-support.kube-system.svc.cluster.local

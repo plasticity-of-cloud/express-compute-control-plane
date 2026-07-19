@@ -1,2 +1,2 @@
 #!/bin/bash
-./eksdx-cli.sh delete-cluster $1
+./ecp-cli.sh delete-cluster $1

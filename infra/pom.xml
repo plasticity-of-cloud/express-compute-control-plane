@@ -5,10 +5,10 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>ai.codriverlabs</groupId>
-    <artifactId>aws-eks-auth-parent</artifactId>
+    <artifactId>express-compute-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
   </parent>
-  <artifactId>eks-dx-infra</artifactId>
+  <artifactId>ecp-infra</artifactId>
   <description>CDK infrastructure for EKS-DX Lambda service</description>
 
   <properties>
@@ -37,7 +37,7 @@
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.6.3</version>
         <configuration>
-          <mainClass>ai.codriverlabs.eksdx.infra.InfraApp</mainClass>
+          <mainClass>ai.codriverlabs.ecp.infra.InfraApp</mainClass>
         </configuration>
       </plugin>
       <plugin>
