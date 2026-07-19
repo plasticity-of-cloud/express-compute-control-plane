@@ -1,13 +1,13 @@
-# EKS-DX Integration: k3s on EC2
+# Express Compute Integration: k3s on EC2
 
-End-to-end procedure to enable EKS Pod Identity on a k3s cluster.
+End-to-end procedure to enable EKS Workload Identity on a k3s cluster.
 
 > For a full tutorial including EC2 launch and setup from scratch, see [ec2-k3s-pod-identity/](ec2-k3s-pod-identity/).
 
 ## Prerequisites
 
 - k3s node running on EC2 (single-node or multi-node)
-- `eks-dx` CLI installed locally
+- `ecp` CLI installed locally
 - AWS account with CDK stack deployed (see [deployment.md](deployment.md))
 - `ENDPOINT` env var set to your API Gateway URL
 
@@ -41,16 +41,16 @@ Then restart: `systemctl restart k3s`
 
 ---
 
-## 2. Register the cluster with eks-dx
+## 2. Register the cluster with ecp
 
 From your local machine (with `~/.kube/config` pointing at the k3s cluster):
 
 ```bash
 # Configure CLI endpoint once
-eks-dx configure --endpoint $ENDPOINT --region us-east-1
+ecp configure --endpoint $ENDPOINT --region us-east-1
 
 # Register — auto-discovers issuer + JWKS from the kube-apiserver
-eks-dx create-cluster --name my-k3s --oidc-mode self-managed
+ecp create-cluster --name my-k3s --oidc-mode self-managed
 ```
 
 Or manually if auto-discovery doesn't work (e.g. kube-apiserver not reachable from your machine):
@@ -60,7 +60,7 @@ Or manually if auto-discovery doesn't work (e.g. kube-apiserver not reachable fr
 kubectl get --raw /openid/v1/jwks > /tmp/jwks.json
 
 # From your machine
-eks-dx create-cluster --name my-k3s --oidc-mode self-managed \
+ecp create-cluster --name my-k3s --oidc-mode self-managed \
   --issuer https://<PUBLIC_IP> \
   --jwks-file /tmp/jwks.json
 ```
@@ -68,18 +68,18 @@ eks-dx create-cluster --name my-k3s --oidc-mode self-managed \
 Verify:
 
 ```bash
-eks-dx describe-cluster my-k3s
+ecp describe-cluster my-k3s
 ```
 
 ---
 
-## 3. Install EKS-DX Pod Identity components
+## 3. Install Express Compute Workload Identity components
 
 A single script installs all three components (auth-proxy, webhook, pod-identity-agent):
 
 ```bash
-curl -sL https://github.com/plasticity-of-cloud/eks-d-xpress/releases/latest/download/install-eks-dx-pod-identity.sh \
-  | CLUSTER_NAME=my-k3s AWS_REGION=us-east-1 EKS_DX_ENDPOINT=${ENDPOINT} bash
+curl -sL https://github.com/plasticity-of-cloud/express-compute/releases/latest/download/install-ecp-pod-identity.sh \
+  | CLUSTER_NAME=my-k3s AWS_REGION=us-east-1 ECP_ENDPOINT=${ENDPOINT} bash
 ```
 
 If your EC2 node has an instance profile, the proxy picks up AWS credentials automatically via the metadata service. Otherwise export them before running:
@@ -91,26 +91,26 @@ export AWS_SECRET_ACCESS_KEY=...
 
 ---
 
-## 4. Create a pod identity association
+## 4. Create a workload identity
 
 First, prepare your IAM role (see [IAM Role Setup](iam/iam-role-setup.md) for full details):
 
 ```bash
-# Tag the role so EKS-DX can manage the trust policy automatically
-aws iam tag-role --role-name my-role --tags Key=eks-dx-managed,Value=true
+# Tag the role so Express Compute can manage the trust policy automatically
+aws iam tag-role --role-name my-role --tags Key=ecp-managed,Value=true
 ```
 
 Then create the association:
 
 ```bash
-eks-dx create-association \
+ecp create-association \
   --cluster-name my-k3s \
   --namespace my-app \
   --service-account my-sa \
   --role-arn arn:aws:iam::123456789012:role/my-role
 ```
 
-EKS-DX automatically configures the role's trust policy with the correct scoped statement (cluster + namespace + service account). No role naming constraints apply.
+Express Compute automatically configures the role's trust policy with the correct scoped statement (cluster + namespace + service account). No role naming constraints apply.
 
 ---
 
@@ -152,6 +152,6 @@ kubectl logs aws-test -n my-app
 
 **JWT validation fails:** the issuer in DynamoDB doesn't match the `iss` claim in the SA token. Re-register with the correct `--issuer`.
 
-**No association found:** the pod's `namespace/serviceAccount` doesn't match any registered association. Run `eks-dx list-associations --cluster my-k3s`.
+**No association found:** the pod's `namespace/serviceAccount` doesn't match any registered association. Run `ecp list-associations --cluster my-k3s`.
 
-**Proxy token rejected:** the proxy's projected SA token audience doesn't match `eks-dx.codriverlabs.ai`. Check the volume spec in the proxy deployment.
+**Proxy token rejected:** the proxy's projected SA token audience doesn't match `ecp.codriverlabs.ai`. Check the volume spec in the proxy deployment.

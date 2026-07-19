@@ -6,7 +6,7 @@
 
 The tenant-service Lambda role has `iam:CreateRole`, `iam:PutRolePolicy`, `iam:PassRole` scoped to:
 ```
-arn:aws:iam::*:role/eks-d-xpress-tenant-*
+arn:aws:iam::*:role/express-compute-tenant-*
 ```
 
 This prevents creating arbitrary roles but does not prevent:
@@ -21,13 +21,13 @@ This prevents creating arbitrary roles but does not prevent:
 Replace `*` with the deployment account ID in CDK:
 ```java
 .resources(List.of(
-    String.format("arn:aws:iam::%s:role/eks-d-xpress-tenant-*", Stack.of(this).getAccount()),
-    String.format("arn:aws:iam::%s:instance-profile/eks-d-xpress-tenant-*", Stack.of(this).getAccount())))
+    String.format("arn:aws:iam::%s:role/express-compute-tenant-*", Stack.of(this).getAccount()),
+    String.format("arn:aws:iam::%s:instance-profile/express-compute-tenant-*", Stack.of(this).getAccount())))
 ```
 
 ### Phase 2 — Permissions Boundary (Medium effort)
 
-Create a managed policy `EksDxTenantPermissionsBoundary` that caps what any tenant role can do:
+Create a managed policy `EcpTenantPermissionsBoundary` that caps what any tenant role can do:
 
 ```json
 {
@@ -64,11 +64,11 @@ Then enforce it on `iam:CreateRole`:
 ```java
 tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
     .actions(List.of("iam:CreateRole", "iam:TagRole"))
-    .resources(List.of(String.format("arn:aws:iam::%s:role/eks-d-xpress-tenant-*", account)))
+    .resources(List.of(String.format("arn:aws:iam::%s:role/express-compute-tenant-*", account)))
     .conditions(Map.of(
         "StringEquals", Map.of(
             "iam:PermissionsBoundary",
-            String.format("arn:aws:iam::%s:policy/EksDxTenantPermissionsBoundary", account))))
+            String.format("arn:aws:iam::%s:policy/EcpTenantPermissionsBoundary", account))))
     .build());
 ```
 
@@ -80,7 +80,7 @@ Add condition to `iam:PassRole`:
 ```java
 tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
     .actions(List.of("iam:PassRole"))
-    .resources(List.of(String.format("arn:aws:iam::%s:role/eks-d-xpress-tenant-*", account)))
+    .resources(List.of(String.format("arn:aws:iam::%s:role/express-compute-tenant-*", account)))
     .conditions(Map.of(
         "StringEquals", Map.of("iam:PassedToService", "ec2.amazonaws.com")))
     .build());
@@ -88,7 +88,7 @@ tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
 
 ### Phase 4 — Audit Trail (Low effort)
 
-Add CloudTrail data event logging for IAM actions on `eks-d-xpress-tenant-*` resources. Alert on:
+Add CloudTrail data event logging for IAM actions on `express-compute-tenant-*` resources. Alert on:
 - Role creation without permissions boundary
 - Policy attachments exceeding boundary
 - PassRole to non-EC2 services

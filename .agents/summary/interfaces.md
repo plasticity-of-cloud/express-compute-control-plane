@@ -25,10 +25,10 @@
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/clusters/{name}/pod-identity-associations` | IAM SigV4 | Create association |
-| `GET` | `/clusters/{name}/pod-identity-associations` | IAM SigV4 | List associations |
-| `GET` | `/clusters/{name}/pod-identity-associations/{id}` | IAM SigV4 | Describe association |
-| `DELETE` | `/clusters/{name}/pod-identity-associations/{id}` | IAM SigV4 | Delete association |
+| `POST` | `/clusters/{name}/workload-identities` | IAM SigV4 | Create association |
+| `GET` | `/clusters/{name}/workload-identities` | IAM SigV4 | List associations |
+| `GET` | `/clusters/{name}/workload-identities/{id}` | IAM SigV4 | Describe association |
+| `DELETE` | `/clusters/{name}/workload-identities/{id}` | IAM SigV4 | Delete association |
 
 ### Unified Cluster Lifecycle (tenant-service)
 
@@ -56,7 +56,7 @@
 
 ## Kubernetes APIs (Webhooks)
 
-### Pod Identity Webhook
+### Workload Identity Webhook
 
 - **Type**: Mutating Admission Webhook
 - **Resource**: `pods` (CREATE)
@@ -110,17 +110,17 @@ static String dlmRoleName(String tenantId)
 ## CLI Commands
 
 ```
-eks-dx create-cluster <name> [--wait] [--managed|--unmanaged]
-eks-dx delete-cluster <name> [--wait]
-eks-dx describe-cluster <name>
-eks-dx list-clusters
-eks-dx update-cluster <name> [--refresh-jwks]
-eks-dx stop-cluster <name>
-eks-dx resume-cluster <name>
-eks-dx get-cluster-access <name>
-eks-dx create-association --cluster <name> --namespace <ns> --service-account <sa> --role-arn <arn>
-eks-dx delete-association --cluster <name> --id <id>
-eks-dx describe-association --cluster <name> --id <id>
-eks-dx list-associations --cluster <name> [--namespace <ns>]
-eks-dx configure
+ecp create-cluster <name> [--wait] [--managed|--unmanaged]
+ecp delete-cluster <name> [--wait]
+ecp describe-cluster <name>
+ecp list-clusters
+ecp update-cluster <name> [--refresh-jwks]
+ecp stop-cluster <name>
+ecp resume-cluster <name>
+ecp get-cluster-access <name>
+ecp create-association --cluster <name> --namespace <ns> --service-account <sa> --role-arn <arn>
+ecp delete-association --cluster <name> --id <id>
+ecp describe-association --cluster <name> --id <id>
+ecp list-associations --cluster <name> [--namespace <ns>]
+ecp configure
 ```

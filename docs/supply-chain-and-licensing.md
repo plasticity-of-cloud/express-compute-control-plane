@@ -1,12 +1,12 @@
 # Supply Chain, Licensing & SBOM
 
-This document describes the software supply chain, dependency licensing, and artifact provenance for the EKS-D-Xpress project.
+This document describes the software supply chain, dependency licensing, and artifact provenance for the Express Compute project.
 
 ---
 
 ## License
 
-EKS-D-Xpress is licensed under the **Elastic License 2.0 (ELv2)**.
+Express Compute is licensed under the **Elastic License 2.0 (ELv2)**.
 
 - You may use, copy, distribute, and create derivative works freely.
 - You may **not** provide it as a hosted/managed service to third parties.
@@ -82,7 +82,7 @@ Each release artifact includes:
 
 ```bash
 # Generate SBOM for a specific module
-mvn org.cyclonedx:cyclonedx-maven-plugin:makeBom -pl eks-dx-tenant-service
+mvn org.cyclonedx:cyclonedx-maven-plugin:makeBom -pl ecp-tenant-service
 
 # Output: target/bom.json (CycloneDX format)
 ```
@@ -124,7 +124,7 @@ sha256sum -c checksums.sha256
 Future releases will include cosign signatures for container images:
 
 ```bash
-cosign verify ghcr.io/plasticity-of-cloud/eks-d-xpress-auth-proxy:1.0.3
+cosign verify ghcr.io/plasticity-of-cloud/express-compute-auth-proxy:1.0.3
 ```
 
 ---
@@ -169,6 +169,6 @@ ELv2 allows you to:
 - ✓ Use internally without restriction
 
 ELv2 does **not** allow:
-- ✗ Offering EKS-D-Xpress as a hosted/managed service to third parties
+- ✗ Offering Express Compute as a hosted/managed service to third parties
 
 For managed service rights or custom licensing: support@codriverlabs.ai

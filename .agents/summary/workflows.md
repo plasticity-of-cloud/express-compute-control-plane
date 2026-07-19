@@ -5,8 +5,8 @@
 ```mermaid
 sequenceDiagram
     participant Pod
-    participant Agent as Pod Identity Agent
-    participant Proxy as eks-dx-auth-proxy
+    participant Agent as Workload Identity Agent
+    participant Proxy as ecp-auth-proxy
     participant K8s as K8s API Server
     participant Lambda as credential-service
     participant DDB as DynamoDB
@@ -31,7 +31,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant CLI as eks-dx CLI
+    participant CLI as ecp CLI
     participant TSvc as tenant-service
     participant DDB as DynamoDB
     participant Net as TenantNetworkService
@@ -90,7 +90,7 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    participant CLI as eks-dx CLI
+    participant CLI as ecp CLI
     participant K8s as Target Cluster
     participant TSvc as tenant-service
     participant DDB as DynamoDB
@@ -122,12 +122,12 @@ flowchart TD
     L --> M[Done]
 ```
 
-## Pod Identity Webhook Flow
+## Workload Identity Webhook Flow
 
 ```mermaid
 sequenceDiagram
     participant K8s as K8s API Server
-    participant WH as Pod Identity Webhook
+    participant WH as Workload Identity Webhook
     participant Lambda as mgmt-service
 
     K8s->>WH: AdmissionReview (Pod CREATE)

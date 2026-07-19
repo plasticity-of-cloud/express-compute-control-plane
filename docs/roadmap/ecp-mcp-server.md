@@ -1,4 +1,4 @@
-# Roadmap — EKS-DX as an MCP Server
+# Roadmap — Express Compute as an MCP Server
 
 ## Status: Planned
 
@@ -6,32 +6,32 @@
 
 The rise of autonomous AI agents (coding agents, CI agents, research agents) creates a new class of infrastructure consumer: agents that need **ephemeral, isolated Kubernetes environments** to execute work — and then discard them.
 
-eks-dx is already well-positioned for this:
+ecp is already well-positioned for this:
 
 - **API-driven** — every operation (provision, register, associate, terminate) is a REST call
 - **Fast lifecycle** — tenant clusters provision in minutes, terminate in seconds via a single API call
-- **Pod Identity** — agents running workloads inside the cluster get scoped AWS credentials automatically, no static key distribution
+- **Workload Identity** — agents running workloads inside the cluster get scoped AWS credentials automatically, no static key distribution
 - **Serverless backend** — no ops overhead; scales to zero between uses
 
-Exposing eks-dx as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server lets any MCP-compatible AI agent (Claude, Cursor, Kiro, custom agents) provision and manage clusters as native tool calls — the same way a human uses the CLI.
+Exposing ecp as an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server lets any MCP-compatible AI agent (Claude, Cursor, Kiro, custom agents) provision and manage clusters as native tool calls — the same way a human uses the CLI.
 
 ## The Branch/PR Mental Model
 
 The analogy to Git branches is direct:
 
 ```
-git checkout -b feature/my-work     →  eks-dx create-tenant
-                                        eks-dx create-association
+git checkout -b feature/my-work     →  ecp create-tenant
+                                        ecp create-association
                                         <agent works in isolation>
 git push && open PR                 →  agent validates workloads, runs tests
-git merge && delete branch          →  eks-dx delete-tenant
+git merge && delete branch          →  ecp delete-tenant
 ```
 
 Each agent task gets its own cluster. Clusters are cheap (single EC2 instance), isolated (dedicated VPC subnets, IAM role, SG), and disposable. Agents never share state or credentials across tasks.
 
-## Proposed MCP Server: `eks-dx-mcp`
+## Proposed MCP Server: `ecp-mcp`
 
-A new module (or a thin layer over the existing CLI) that exposes eks-dx operations as MCP tools.
+A new module (or a thin layer over the existing CLI) that exposes ecp operations as MCP tools.
 
 ### Tools
 
@@ -41,9 +41,9 @@ A new module (or a thin layer over the existing CLI) that exposes eks-dx operati
 | `get_tenant` | `GET /tenants/{id}` | Poll provisioning status |
 | `delete_tenant` | `DELETE /tenants/{id}` | Terminate and clean up |
 | `register_cluster` | `POST /clusters` | Register cluster with JWKS |
-| `create_association` | `POST /clusters/{name}/pod-identity-associations` | Map SA → IAM role |
-| `list_associations` | `GET /clusters/{name}/pod-identity-associations` | List current mappings |
-| `delete_association` | `DELETE /clusters/{name}/pod-identity-associations/{id}` | Remove mapping |
+| `create_association` | `POST /clusters/{name}/workload-identities` | Map SA → IAM role |
+| `list_associations` | `GET /clusters/{name}/workload-identities` | List current mappings |
+| `delete_association` | `DELETE /clusters/{name}/workload-identities/{id}` | Remove mapping |
 | `delete_cluster` | `DELETE /clusters/{name}` | Deregister cluster |
 | `stream_provisioning` | `GET /tenants/{id}/stream` | SSE progress stream during provisioning |
 
@@ -78,17 +78,17 @@ An autonomous coding agent working on a feature that touches S3 permissions:
 
 3. Agent calls create_association(cluster="agent-task-42",
      namespace="default", serviceAccount="workload",
-     roleArn="arn:aws:iam::123456789012:role/eks-dx-pod-s3-reader")
+     roleArn="arn:aws:iam::123456789012:role/ecp-pod-s3-reader")
 
 4. Agent deploys its workload to the cluster via kubectl
-   → Pod Identity Agent + eks-dx-auth-proxy provide real AWS credentials
+   → Workload Identity Agent + ecp-auth-proxy provide real AWS credentials
    → Agent validates S3 access works as expected
 
 5. Agent calls delete_tenant(id=...) → all resources cleaned up
    Agent calls delete_cluster(name="agent-task-42") → DynamoDB entry removed
 ```
 
-The agent has full AWS credential isolation — its workload assumed `eks-dx-pod-s3-reader`, which only has the permissions it needs, for the duration of the task.
+The agent has full AWS credential isolation — its workload assumed `ecp-pod-s3-reader`, which only has the permissions it needs, for the duration of the task.
 
 ## Why This Matters
 
@@ -107,15 +107,15 @@ The agent has full AWS credential isolation — its workload assumed `eks-dx-pod
 The MCP server can be implemented as a thin Java/Quarkus module using the [MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk):
 
 ```
-eks-dx-mcp/
+ecp-mcp/
 ├── src/main/java/.../
-│   ├── EksDxMcpServer.java          # MCP server entry point
+│   ├── EcpMcpServer.java          # MCP server entry point
 │   ├── tools/
 │   │   ├── TenantTools.java         # create/get/delete tenant
 │   │   ├── ClusterTools.java        # register/delete cluster
 │   │   └── AssociationTools.java    # create/list/delete associations
 │   └── client/
-│       └── EksDxApiClient.java      # reuse AwsSigV4Signer from CLI
+│       └── EcpApiClient.java      # reuse AwsSigV4Signer from CLI
 ```
 
 The MCP server talks to the existing API Gateway endpoints using SigV4 signing — the same mechanism as the CLI. No new backend Lambda is needed.
@@ -136,4 +136,4 @@ The MCP server talks to the existing API Gateway endpoints using SigV4 signing �
 
 - `docs/roadmap/security-hardening/control-plane-managed-oidc-jwks.md` — pre-registration enables agents to get a kubeconfig before the cluster boots
 - `docs/roadmap/security-hardening/ssm-only-access.md` — SSM-only access removes the need for agents to manage SSH keys
-- `archived (see eks-d-xpress-internal-docs)` — proxy design that agents could use to interact with the cluster API via Lambda/CloudFront without public exposure
+- `archived (see express-compute-internal-docs)` — proxy design that agents could use to interact with the cluster API via Lambda/CloudFront without public exposure

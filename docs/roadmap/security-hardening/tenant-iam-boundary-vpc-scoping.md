@@ -8,15 +8,15 @@
 
 The tenant Lambda can currently:
 
-1. **Create IAM roles without a permissions boundary** — `iam:CreateRole` + `iam:PutRolePolicy` are allowed on `arn:aws:iam::*:role/eks-d-xpress-tenant-*` with no `iam:PermissionsBoundary` condition. A compromised Lambda (or a bug in `TenantIamService`) could attach `AdministratorAccess` to a tenant role and assume it — full account takeover.
+1. **Create IAM roles without a permissions boundary** — `iam:CreateRole` + `iam:PutRolePolicy` are allowed on `arn:aws:iam::*:role/express-compute-tenant-*` with no `iam:PermissionsBoundary` condition. A compromised Lambda (or a bug in `TenantIamService`) could attach `AdministratorAccess` to a tenant role and assume it — full account takeover.
 
 2. **Pass roles to arbitrary services** — `iam:PassRole` has no `iam:PassedToService` condition, so the tenant role could be passed to Lambda, ECS, or any other service, not just EC2.
 
 3. **Use wildcard account in IAM ARNs** — all IAM resource ARNs use `arn:aws:iam::*:role/...`. The `*` allows the Lambda to operate on roles in other accounts if cross-account trust is misconfigured.
 
-4. **EC2 mutating actions lack VPC tagging enforcement** — `ec2:RunInstances`, `ec2:CreateSubnet`, `ec2:CreateSecurityGroup` are conditionally scoped to the shared VPC ARN, but there is no tag-based enforcement ensuring created resources are always tagged back to the `eks-d-xpress` project. An untagged resource drifts out of lifecycle management.
+4. **EC2 mutating actions lack VPC tagging enforcement** — `ec2:RunInstances`, `ec2:CreateSubnet`, `ec2:CreateSecurityGroup` are conditionally scoped to the shared VPC ARN, but there is no tag-based enforcement ensuring created resources are always tagged back to the `express-compute` project. An untagged resource drifts out of lifecycle management.
 
-5. **Secrets Manager ARN uses wildcard region/account** — `arn:aws:secretsmanager:*:*:secret:eks-d-xpress/tenant/*` should be pinned to the deployment region and account.
+5. **Secrets Manager ARN uses wildcard region/account** — `arn:aws:secretsmanager:*:*:secret:express-compute/tenant/*` should be pinned to the deployment region and account.
 
 6. **DLM lifecycle policies are `Resource: "*"`** — no scoping by tag or ARN.
 
@@ -26,23 +26,23 @@ The tenant Lambda can currently:
 
 ### Phase 1 — Pin account ID in IAM and Secrets Manager ARNs (CDK-only, no Lambda change)
 
-Replace `*` account wildcards with `Stack.of(this).getAccount()` everywhere in `EksDXpressControlPlaneStack`:
+Replace `*` account wildcards with `Stack.of(this).getAccount()` everywhere in `ExpressComputeControlPlaneStack`:
 
 ```java
 // Before
-"arn:aws:iam::*:role/eks-d-xpress-tenant-*"
+"arn:aws:iam::*:role/express-compute-tenant-*"
 
 // After
-String.format("arn:aws:iam::%s:role/eks-d-xpress-tenant-*", account)
+String.format("arn:aws:iam::%s:role/express-compute-tenant-*", account)
 ```
 
 Same for Secrets Manager:
 ```java
 // Before
-"arn:aws:secretsmanager:*:*:secret:eks-d-xpress/tenant/*"
+"arn:aws:secretsmanager:*:*:secret:express-compute/tenant/*"
 
 // After
-String.format("arn:aws:secretsmanager:%s:%s:secret:eks-d-xpress/tenant/*", region, account)
+String.format("arn:aws:secretsmanager:%s:%s:secret:express-compute/tenant/*", region, account)
 ```
 
 **Risk:** None. Restricts to deployment account only.
@@ -55,8 +55,8 @@ String.format("arn:aws:secretsmanager:%s:%s:secret:eks-d-xpress/tenant/*", regio
 
 ```java
 ManagedPolicy tenantBoundary = ManagedPolicy.Builder.create(this, "TenantRoleBoundary")
-    .managedPolicyName("eks-d-xpress-tenant-boundary")
-    .description("Caps maximum permissions for any EKS-DX tenant EC2 role")
+    .managedPolicyName("express-compute-tenant-boundary")
+    .description("Caps maximum permissions for any Express Compute tenant EC2 role")
     .statements(List.of(
         // What tenant roles ARE allowed to do (on EC2 nodes running EKS-D)
         PolicyStatement.Builder.create()
@@ -107,26 +107,26 @@ The boundary caps what any tenant role can do at the instance level. Even if `Te
 tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
     .actions(List.of("iam:CreateRole", "iam:TagRole"))
     .resources(List.of(
-        String.format("arn:aws:iam::%s:role/eks-d-xpress-tenant-*", account)))
+        String.format("arn:aws:iam::%s:role/express-compute-tenant-*", account)))
     .conditions(Map.of(
         "StringEquals", Map.of(
             "iam:PermissionsBoundary",
-            String.format("arn:aws:iam::%s:policy/eks-d-xpress-tenant-boundary", account))))
+            String.format("arn:aws:iam::%s:policy/express-compute-tenant-boundary", account))))
     .build());
 ```
 
-Without `iam:PermissionsBoundary` set to exactly `eks-d-xpress-tenant-boundary`, the `CreateRole` call is denied — even to the tenant Lambda itself.
+Without `iam:PermissionsBoundary` set to exactly `express-compute-tenant-boundary`, the `CreateRole` call is denied — even to the tenant Lambda itself.
 
 #### 2c. Update `TenantIamService` to attach the boundary on role creation
 
 ```java
 // TenantIamService.createTenantRole()
 iam.createRole(r -> r
-    .roleName("eks-d-xpress-tenant-" + tenantId)
+    .roleName("express-compute-tenant-" + tenantId)
     .assumeRolePolicyDocument(ec2TrustPolicy)
     .permissionsBoundary(
-        "arn:aws:iam::" + accountId + ":policy/eks-d-xpress-tenant-boundary")
-    .tags(Tag.builder().key("project").value("eks-d-xpress").build(),
+        "arn:aws:iam::" + accountId + ":policy/express-compute-tenant-boundary")
+    .tags(Tag.builder().key("project").value("express-compute").build(),
           Tag.builder().key("tenant-id").value(tenantId).build()));
 ```
 
@@ -137,11 +137,11 @@ tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
     .actions(List.of("iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy",
                      "iam:DeleteRolePolicy"))
     .resources(List.of(
-        String.format("arn:aws:iam::%s:role/eks-d-xpress-tenant-*", account)))
+        String.format("arn:aws:iam::%s:role/express-compute-tenant-*", account)))
     .conditions(Map.of(
         "StringEquals", Map.of(
             "iam:PermissionsBoundary",
-            String.format("arn:aws:iam::%s:policy/eks-d-xpress-tenant-boundary", account))))
+            String.format("arn:aws:iam::%s:policy/express-compute-tenant-boundary", account))))
     .build());
 ```
 
@@ -153,7 +153,7 @@ tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
 tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
     .actions(List.of("iam:PassRole"))
     .resources(List.of(
-        String.format("arn:aws:iam::%s:role/eks-d-xpress-tenant-*", account)))
+        String.format("arn:aws:iam::%s:role/express-compute-tenant-*", account)))
     .conditions(Map.of(
         "StringEquals", Map.of("iam:PassedToService", "ec2.amazonaws.com")))
     .build());
@@ -165,7 +165,7 @@ Blocks passing tenant roles to Lambda, ECS, IRSA, or any non-EC2 service.
 
 ### Phase 4 — Enforce VPC tagging on EC2 resource creation
 
-All resources created in the eks-d-xpress VPC must carry `project=eks-d-xpress` and `tenant-id=<id>` tags for lifecycle management. Add `aws:RequestTag` conditions to mutating EC2 actions:
+All resources created in the express-compute VPC must carry `project=express-compute` and `tenant-id=<id>` tags for lifecycle management. Add `aws:RequestTag` conditions to mutating EC2 actions:
 
 ```java
 tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
@@ -181,7 +181,7 @@ tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
         // vpc/* needed so RunInstances can reference the VPC
         String.format("arn:aws:ec2:%s:%s:vpc/%s", region, account, vpcId)))
     .conditions(Map.of(
-        "StringEquals", Map.of("aws:RequestTag/project", "eks-d-xpress")))
+        "StringEquals", Map.of("aws:RequestTag/project", "express-compute")))
     .build());
 ```
 
@@ -224,8 +224,8 @@ Phase 1 and 3 are zero-risk CDK-only changes that can go in the next deploy. Pha
 
 ## Affected Files
 
-- `infra/src/main/java/ai/codriverlabs/eksdx/infra/EksDXpressControlPlaneStack.java` — all phases
-- `eks-dx-tenant-service/.../service/TenantIamService.java` — Phase 2c (`permissionsBoundary` on `createRole`)
+- `infra/src/main/java/ai/codriverlabs/ecp/infra/ExpressComputeControlPlaneStack.java` — all phases
+- `ecp-tenant-service/.../service/TenantIamService.java` — Phase 2c (`permissionsBoundary` on `createRole`)
 
 ## Related Documents
 

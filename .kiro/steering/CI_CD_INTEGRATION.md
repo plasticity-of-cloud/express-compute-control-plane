@@ -17,7 +17,7 @@ This guide explains how to integrate the AWS EKS Auth Service Proxy into your CI
 - Support multi-stage builds requiring AWS access
 
 ### 3. Development Environment Simulation
-- Simulate EKS Pod Identity in local development
+- Simulate EKS Workload Identity in local development
 - Test role-based access patterns
 - Validate application behavior with different IAM roles
 
@@ -41,8 +41,8 @@ spec:
       value: "http://localhost:8080/"
     - name: AWS_CONTAINER_AUTHORIZATION_TOKEN
       value: "Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
-  - name: eks-dx-auth-proxy
-    image: eks-dx-auth-proxy:latest
+  - name: ecp-auth-proxy
+    image: ecp-auth-proxy:latest
     ports:
     - containerPort: 8080
     env:
@@ -68,22 +68,22 @@ Deploy as a shared service for multiple applications:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
   namespace: ci-cd
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: eks-dx-auth-proxy
+      app: ecp-auth-proxy
   template:
     metadata:
       labels:
-        app: eks-dx-auth-proxy
+        app: ecp-auth-proxy
     spec:
-      serviceAccountName: eks-dx-auth-proxy
+      serviceAccountName: ecp-auth-proxy
       containers:
-      - name: eks-dx-auth-proxy
-        image: eks-dx-auth-proxy:latest
+      - name: ecp-auth-proxy
+        image: ecp-auth-proxy:latest
         ports:
         - containerPort: 8080
         env:
@@ -100,11 +100,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
   namespace: ci-cd
 spec:
   selector:
-    app: eks-dx-auth-proxy
+    app: ecp-auth-proxy
   ports:
   - port: 80
     targetPort: 8080
@@ -124,7 +124,7 @@ spec:
     spec:
       initContainers:
       - name: setup-credentials
-        image: eks-dx-auth-proxy:latest
+        image: ecp-auth-proxy:latest
         command: ["/bin/sh"]
         args:
         - -c
@@ -156,13 +156,13 @@ spec:
 
 ## Configuration Examples
 
-### Pod Identity Associations ConfigMap
+### Workload Identity Associations ConfigMap
 
 ```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: pod-identity-associations
+  name: workload-identities
   namespace: kube-system
 data:
   # Specific service account mappings
@@ -195,13 +195,13 @@ data:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
   namespace: ci-cd
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
 rules:
 - apiGroups: [""]
   resources: ["configmaps"]
@@ -210,14 +210,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
 subjects:
 - kind: ServiceAccount
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
   namespace: ci-cd
 ```
 
@@ -233,8 +233,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     services:
-      eks-dx-auth-proxy:
-        image: eks-dx-auth-proxy:latest
+      ecp-auth-proxy:
+        image: ecp-auth-proxy:latest
         ports:
           - 8080:8080
         env:
@@ -267,13 +267,13 @@ stages:
   - deploy
 
 variables:
-  AWS_CONTAINER_CREDENTIALS_FULL_URI: "http://eks-dx-auth-proxy:8080/"
+  AWS_CONTAINER_CREDENTIALS_FULL_URI: "http://ecp-auth-proxy:8080/"
 
 test:
   stage: test
   services:
-    - name: eks-dx-auth-proxy:latest
-      alias: eks-dx-auth-proxy
+    - name: ecp-auth-proxy:latest
+      alias: ecp-auth-proxy
   variables:
     AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID
     AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
@@ -294,7 +294,7 @@ pipeline {
         stage('Test with EKS Auth Proxy') {
             steps {
                 script {
-                    docker.image('eks-dx-auth-proxy:latest').withRun('-p 8080:8080 -e AWS_ACCOUNT_ID=123456789012') { proxy ->
+                    docker.image('ecp-auth-proxy:latest').withRun('-p 8080:8080 -e AWS_ACCOUNT_ID=123456789012') { proxy ->
                         // Wait for proxy to be ready
                         sh 'until curl -f http://localhost:8080/health/ready; do sleep 1; done'
                         
@@ -319,8 +319,8 @@ pipeline {
 ```yaml
 version: '3.8'
 services:
-  eks-dx-auth-proxy:
-    image: eks-dx-auth-proxy:latest
+  ecp-auth-proxy:
+    image: ecp-auth-proxy:latest
     ports:
       - "8080:8080"
     environment:
@@ -336,10 +336,10 @@ services:
   app:
     image: my-app:latest
     depends_on:
-      eks-dx-auth-proxy:
+      ecp-auth-proxy:
         condition: service_healthy
     environment:
-      - AWS_CONTAINER_CREDENTIALS_FULL_URI=http://eks-dx-auth-proxy:8080/
+      - AWS_CONTAINER_CREDENTIALS_FULL_URI=http://ecp-auth-proxy:8080/
       - AWS_CONTAINER_AUTHORIZATION_TOKEN=Bearer fake-token
 ```
 
@@ -353,11 +353,11 @@ The proxy exposes metrics at `/metrics`:
 apiVersion: v1
 kind: ServiceMonitor
 metadata:
-  name: eks-dx-auth-proxy
+  name: ecp-auth-proxy
 spec:
   selector:
     matchLabels:
-      app: eks-dx-auth-proxy
+      app: ecp-auth-proxy
   endpoints:
   - port: http
     path: /metrics
@@ -415,21 +415,21 @@ quarkus.log.category."com.plcloud".level=INFO
 
 3. **ConfigMap Not Found**
    ```bash
-   kubectl get configmap pod-identity-associations -n kube-system
+   kubectl get configmap workload-identities -n kube-system
    ```
 
 ### Debug Commands
 
 ```bash
 # Check proxy logs
-kubectl logs -l app=eks-dx-auth-proxy
+kubectl logs -l app=ecp-auth-proxy
 
 # Test endpoint directly
-kubectl port-forward svc/eks-dx-auth-proxy 8080:80
+kubectl port-forward svc/ecp-auth-proxy 8080:80
 curl -X POST http://localhost:8080/ \
   -H "Content-Type: application/json" \
   -d '{"ClusterName":"test","Token":"fake-token"}'
 
 # Verify ConfigMap
-kubectl describe configmap pod-identity-associations -n kube-system
+kubectl describe configmap workload-identities -n kube-system
 ```

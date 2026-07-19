@@ -2,7 +2,7 @@
 
 ## Problem
 
-When `eks-dx create-cluster <name>` is called with a name that already exists in DynamoDB,
+When `ecp create-cluster <name>` is called with a name that already exists in DynamoDB,
 both managed and self-managed paths execute unconditional `PutItem` writes that silently
 overwrite the existing cluster record (JWKS, issuer, tenantId). This causes:
 
@@ -14,7 +14,7 @@ overwrite the existing cluster record (JWKS, issuer, tenantId). This causes:
 ## Root Cause
 
 `preRegisterCluster()` and `registerSelfManagedCluster()` in `TenantProvisioningService`
-both use plain `dynamoDb.putItem()` with no condition expression on the `eks-dx-clusters`
+both use plain `dynamoDb.putItem()` with no condition expression on the `ecp-clusters`
 table. The `clusterName` field is the partition key and would uniquely identify a conflict,
 but nothing checks for its existence before writing.
 
@@ -49,13 +49,13 @@ and returns HTTP 409 with error type `ResourceInUseException`:
 ```json
 {
   "__type": "ResourceInUseException",
-  "message": "Cluster 'my-cluster' already exists. To replace it, run: eks-dx delete-cluster my-cluster"
+  "message": "Cluster 'my-cluster' already exists. To replace it, run: ecp delete-cluster my-cluster"
 }
 ```
 
 ### 4. CLI UX
 
-`EksDxApiClient.postFunctionUrl()` already extracts the `message` field and prints it to
+`EcpApiClient.postFunctionUrl()` already extracts the `message` field and prints it to
 stderr before exiting. The message is written to be self-explanatory and actionable, so
 no CLI-side change is needed beyond the consistent `Error: ` prefix added to all error
 output from the client.
@@ -64,10 +64,10 @@ output from the client.
 
 | File | Change |
 |------|--------|
-| `eks-dx-tenant-service/.../exception/ClusterAlreadyExistsException.java` | New — custom unchecked exception |
-| `eks-dx-tenant-service/.../service/TenantProvisioningService.java` | Upfront check + conditional PutItem |
-| `eks-dx-tenant-service/.../resource/ClusterResource.java` | Catch 409, return `ResourceInUseException` |
-| `eks-dx-cli/.../util/EksDxApiClient.java` | Consistent `Error: ` prefix on all error messages |
+| `ecp-tenant-service/.../exception/ClusterAlreadyExistsException.java` | New — custom unchecked exception |
+| `ecp-tenant-service/.../service/TenantProvisioningService.java` | Upfront check + conditional PutItem |
+| `ecp-tenant-service/.../resource/ClusterResource.java` | Catch 409, return `ResourceInUseException` |
+| `ecp-cli/.../util/EcpApiClient.java` | Consistent `Error: ` prefix on all error messages |
 
 ## Test Coverage
 
@@ -81,13 +81,13 @@ Unit tests in `ClusterResourceTest.java` verify:
 **Before:**
 ```
 # No output; second cluster silently created; first cluster broken
-$ eks-dx create-cluster my-cluster
+$ ecp create-cluster my-cluster
 Created cluster "my-cluster" (tenant: abc123, managed)
 ```
 
 **After:**
 ```
-$ eks-dx create-cluster my-cluster
-Error: Cluster 'my-cluster' already exists. To replace it, run: eks-dx delete-cluster my-cluster
+$ ecp create-cluster my-cluster
+Error: Cluster 'my-cluster' already exists. To replace it, run: ecp delete-cluster my-cluster
 ```
 Exit code: 1

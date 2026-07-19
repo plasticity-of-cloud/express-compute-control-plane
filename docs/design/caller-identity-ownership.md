@@ -54,7 +54,7 @@ This ensures the same IAM role always resolves to the same owner, regardless of 
 
 ## DynamoDB Schema Changes
 
-### eks-dx-tenants
+### ecp-tenants
 
 Add `ownerArn` attribute (set on create, immutable):
 
@@ -65,7 +65,7 @@ PK: tenantId
   ...
 ```
 
-### eks-dx-clusters
+### ecp-clusters
 
 Add `ownerArn` attribute (set on register, immutable):
 
@@ -128,14 +128,14 @@ This means you can only create/list/delete associations on clusters you own.
 A single SSM parameter controls the maximum tenants per caller:
 
 ```
-/eks-d-xpress/control-plane/quota/max-tenants-per-caller = 5
+/express-compute/control-plane/quota/max-tenants-per-caller = 5
 ```
 
 ### CDK
 
 ```java
 StringParameter.Builder.create(this, "MaxTenantsPerCaller")
-    .parameterName("/eks-d-xpress/control-plane/quota/max-tenants-per-caller")
+    .parameterName("/express-compute/control-plane/quota/max-tenants-per-caller")
     .stringValue("1")
     .description("Maximum tenants a single IAM identity can provision")
     .build();
@@ -144,7 +144,7 @@ StringParameter.Builder.create(this, "MaxTenantsPerCaller")
 ### Enforcement (tenant-service)
 
 ```java
-@ConfigProperty(name = "eks-dx.quota.max-tenants-per-caller", defaultValue = "1")
+@ConfigProperty(name = "ecp.quota.max-tenants-per-caller", defaultValue = "1")
 int maxTenantsPerCaller;
 
 void enforceQuota(String callerArn) {
@@ -175,12 +175,12 @@ Note: 404 (not 403) to avoid leaking resource existence to non-owners.
 
 - [ ] **Shared**: `CallerIdentityExtractor` utility — extracts + normalizes caller ARN from request context
 - [ ] **tenant-service**: Store `ownerArn` on create; filter list/describe/delete by owner
-- [ ] **tenant-service**: Add `owner-index` GSI to eks-dx-tenants table (CDK)
-- [ ] **tenant-service**: Quota enforcement (`/eks-d-xpress/control-plane/quota/max-tenants-per-caller`)
+- [ ] **tenant-service**: Add `owner-index` GSI to ecp-tenants table (CDK)
+- [ ] **tenant-service**: Quota enforcement (`/express-compute/control-plane/quota/max-tenants-per-caller`)
 - [ ] **mgmt-service**: Store `ownerArn` on cluster registration; filter by owner
-- [ ] **mgmt-service**: Add `owner-index` GSI to eks-dx-clusters table (CDK)
+- [ ] **mgmt-service**: Add `owner-index` GSI to ecp-clusters table (CDK)
 - [ ] **mgmt-service**: Scope association CRUD to owned clusters only
-- [ ] **CDK**: Add SSM parameter `/eks-d-xpress/control-plane/quota/max-tenants-per-caller`
+- [ ] **CDK**: Add SSM parameter `/express-compute/control-plane/quota/max-tenants-per-caller`
 - [ ] **CDK**: Add GSIs on both DynamoDB tables
 
 ## Relationship to Full Role Hierarchy (Post-GA)
@@ -205,9 +205,9 @@ The control-plane CDK stack automatically discovers the IAM Identity Center inst
 ```
 AwsCustomResource → SSOAdmin.listInstances → InstanceArn + IdentityStoreId
   ↓
-AWS::IdentityStore::Group        "EksDXpressUsers"
-AWS::SSO::PermissionSet          "EksDXpressAccess"
-    InlinePolicy: execute-api:Invoke on the EKS-DX API Gateway
+AWS::IdentityStore::Group        "ECPpressUsers"
+AWS::SSO::PermissionSet          "ECPpressAccess"
+    InlinePolicy: execute-api:Invoke on the Express Compute API Gateway
 AWS::SSO::Assignment             Group → PermissionSet → deployment account
 ```
 
@@ -232,17 +232,17 @@ String identityStoreId = ssoLookup.getResponseField("Instances.0.IdentityStoreId
 // (CDK condition based on the lookup result)
 
 // 1. Group
-CfnGroup group = CfnGroup.Builder.create(this, "EksDXpressUsersGroup")
+CfnGroup group = CfnGroup.Builder.create(this, "ECPpressUsersGroup")
     .identityStoreId(identityStoreId)
-    .displayName("EksDXpressUsers")
-    .description("Users authorized to access the EKS-DX control plane API")
+    .displayName("ECPpressUsers")
+    .description("Users authorized to access the Express Compute control plane API")
     .build();
 
 // 2. Permission Set
-CfnPermissionSet permissionSet = CfnPermissionSet.Builder.create(this, "EksDXpressPermissionSet")
+CfnPermissionSet permissionSet = CfnPermissionSet.Builder.create(this, "ECPpressPermissionSet")
     .instanceArn(ssoInstanceArn)
-    .name("EksDXpressAccess")
-    .description("Grants invoke access to the EKS-DX API Gateway")
+    .name("ECPpressAccess")
+    .description("Grants invoke access to the Express Compute API Gateway")
     .inlinePolicy(Map.of(
         "Version", "2012-10-17",
         "Statement", List.of(Map.of(
@@ -255,7 +255,7 @@ CfnPermissionSet permissionSet = CfnPermissionSet.Builder.create(this, "EksDXpre
     .build();
 
 // 3. Assignment (group → permission set → this account)
-CfnAssignment.Builder.create(this, "EksDXpressGroupAssignment")
+CfnAssignment.Builder.create(this, "ECPpressGroupAssignment")
     .instanceArn(ssoInstanceArn)
     .permissionSetArn(permissionSet.getAttrPermissionSetArn())
     .principalId(group.getAttrGroupId())
@@ -276,14 +276,14 @@ cdk deploy --context skipSso=true
 ### What the admin does (one-time per user)
 
 1. Deploy CDK stack (Identity Center group created automatically)
-2. In Identity Center console → Groups → `EksDXpressUsers` → Add members
-3. Users run `aws sso login --profile eks-dx` then use `eks-dx` CLI normally
+2. In Identity Center console → Groups → `ECPpressUsers` → Add members
+3. Users run `aws sso login --profile ecp` then use `ecp` CLI normally
 
 ### Access flow
 
 ```
-User → aws sso login → gets temporary credentials with EksDXpressAccess permission set
-  → eks-dx CLI signs request with SigV4
+User → aws sso login → gets temporary credentials with ECPpressAccess permission set
+  → ecp CLI signs request with SigV4
     → API Gateway validates: caller has execute-api:Invoke? ✓
       → Lambda: extract callerArn, enforce ownership + quota
 ```
@@ -307,7 +307,7 @@ The permission set's inline policy is scoped to the specific API Gateway:
 }
 ```
 
-This means EksDXpressUsers group members can ONLY call the EKS-DX API — no other AWS actions are granted by this permission set.
+This means ECPpressUsers group members can ONLY call the Express Compute API — no other AWS actions are granted by this permission set.
 
 ## Machine Identities (EC2, CI/CD)
 
@@ -315,7 +315,7 @@ Machine callers (tenant EC2 instances, GitHub Actions, Jenkins) do NOT use Ident
 
 ### Tenant EC2 instance (self-registration)
 
-The instance profile role (`eks-d-xpress-tenant-{id}-instance-role`) gets a scoped policy from CDK:
+The instance profile role (`express-compute-tenant-{id}-instance-role`) gets a scoped policy from CDK:
 
 ```json
 {
@@ -341,7 +341,7 @@ Grant `execute-api:Invoke` on the API directly in the role's IAM policy. No Iden
 │  Human (CLI)           Machine (EC2 / CI/CD)                 │
 │  ─────────────         ──────────────────────                │
 │  Identity Center       Direct IAM role policy                │
-│  → EksDXpressUsers     → execute-api:Invoke                  │
+│  → ECPpressUsers     → execute-api:Invoke                  │
 │  → Permission Set        (scoped per use case)               │
 │  → SigV4 credentials                                         │
 │                                                              │

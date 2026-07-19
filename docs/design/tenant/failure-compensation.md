@@ -36,7 +36,7 @@ TenantProvisioningService.provision()
 ## DynamoDB Schema Extension
 
 ```
-eks-dx-tenants table:
+ecp-tenants table:
 ┌─────────────────────────────────────────────────────────────────┐
 │ PK: tenantId                                                    │
 ├─────────────────────────────────────────────────────────────────┤
@@ -49,11 +49,11 @@ eks-dx-tenants table:
 │   {"step": 2, "action": "deleteSecrets",                        │
 │    "arns": ["arn:..signing-key", "arn:..ssh-key"]},             │
 │   {"step": 3, "action": "deleteRole",                           │
-│    "roleName": "eks-dx-tenant-foo-instance-role"},              │
+│    "roleName": "ecp-tenant-foo-instance-role"},              │
 │   {"step": 4, "action": "deleteQueue",                          │
-│    "queueName": "eks-dx-foo"},                                  │
+│    "queueName": "ecp-foo"},                                  │
 │   {"step": 5, "action": "deleteEventBridgeRules",               │
-│    "ruleNames": ["eks-dx-foo-spot-...", ...]},                  │
+│    "ruleNames": ["ecp-foo-spot-...", ...]},                  │
 │   {"step": 6, "action": "deleteDlmPolicy",                     │
 │    "policyId": "policy-0abc123"}                                │
 │ ]                                                               │
@@ -69,7 +69,7 @@ During the TTL window, the admin can:
 
 ```bash
 # 1. Check what failed
-eks-dx describe-tenant my-tenant
+ecp describe-tenant my-tenant
 # → state: failed, error: "...", ttl: 2026-05-27T01:00:00Z
 
 # 2. SSM into the instance (if it launched but failed to bootstrap)
@@ -77,16 +77,16 @@ aws ssm start-session --target i-0abc123
 
 # 3. Check user-data execution logs
 aws ssm start-session --target i-0abc123
-$ journalctl -u eks-dx-boot.service
+$ journalctl -u ecp-boot.service
 $ cat /var/log/cloud-init-output.log
 
 # 4. Inspect created resources
-aws ec2 describe-subnets --filters "Name=tag:eks-dx-tenant,Values=my-tenant"
-aws iam get-role --role-name eks-dx-tenant-my-tenant-instance-role
+aws ec2 describe-subnets --filters "Name=tag:ecp-tenant,Values=my-tenant"
+aws iam get-role --role-name ecp-tenant-my-tenant-instance-role
 
 # 5. Manual fix and retry
-eks-dx delete-tenant my-tenant    # explicit cleanup
-eks-dx create-tenant my-tenant    # retry
+ecp delete-tenant my-tenant    # explicit cleanup
+ecp create-tenant my-tenant    # retry
 
 # 6. Or just wait — auto-cleanup after 24h
 ```
@@ -136,7 +136,7 @@ EventBridge: rate(1 hour)
 ```java
 public String provision(String tenantId, ...) {
     List<CompensationEntry> log = new ArrayList<>();
-    String clusterName = "eks-dx-" + tenantId;
+    String clusterName = "ecp-" + tenantId;
 
     try {
         // Step 1
@@ -209,7 +209,7 @@ public void cleanupExpiredTenants() {
 1. **DynamoDB TTL**: Enable on `ttl` attribute
 ```java
 Table.Builder.create(this, "TenantsTable")
-    .tableName("eks-dx-tenants")
+    .tableName("ecp-tenants")
     .partitionKey(...)
     .timeToLiveAttribute("ttl")  // ← add this
     .build();
@@ -231,8 +231,8 @@ Rule.Builder.create(this, "TenantCleanupSchedule")
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `eks-dx.tenant.failure-ttl-hours` | 24 | Hours before failed tenants are auto-cleaned |
-| `eks-dx.tenant.cleanup-enabled` | true | Enable/disable scheduled cleanup |
+| `ecp.tenant.failure-ttl-hours` | 24 | Hours before failed tenants are auto-cleaned |
+| `ecp.tenant.cleanup-enabled` | true | Enable/disable scheduled cleanup |
 
 ## Edge Cases
 
@@ -246,10 +246,10 @@ Rule.Builder.create(this, "TenantCleanupSchedule")
 
 ## Fallback: Tag-based Orphan Detection
 
-As a safety net, run a weekly scan for resources tagged `eks-dx-tenant=*` that have no matching DynamoDB record:
+As a safety net, run a weekly scan for resources tagged `ecp-tenant=*` that have no matching DynamoDB record:
 
 ```bash
-aws ec2 describe-instances --filters "Name=tag:eks-dx-tenant,Values=*" \
+aws ec2 describe-instances --filters "Name=tag:ecp-tenant,Values=*" \
   | cross-reference with DynamoDB
   | terminate orphans older than 48h
 ```

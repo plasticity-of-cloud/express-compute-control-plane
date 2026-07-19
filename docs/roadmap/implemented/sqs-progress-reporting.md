@@ -7,7 +7,7 @@
 The EC2 tenant instance currently has `dynamodb:UpdateItem` on the tenants table via its instance profile. The `progress.sh` script writes state, phase, and progress directly to DynamoDB:
 
 ```bash
-aws dynamodb update-item --table-name "${EKS_DX_TENANTS_TABLE}" \
+aws dynamodb update-item --table-name "${ECP_TENANTS_TABLE}" \
   --key '{"tenantId":{"S":"'${TENANT_ID}'"}}' \
   --update-expression "SET #s = :s, phase = :p, progress = :n, updatedAt = :t" ...
 ```
@@ -32,7 +32,7 @@ EC2 (progress.sh)
   │ sqs:SendMessage (MessageGroupId = tenantId)
   │ MessageDeduplicationId = tenantId + progress (5-min dedup window)
   │
-  └──→ SQS FIFO Queue (eks-dx-tenant-<tenantId>-progress.fifo)
+  └──→ SQS FIFO Queue (ecp-tenant-<tenantId>-progress.fifo)
          │                         ← per-tenant, ephemeral (~5-10 min lifetime)
          │ ReceiveMessage (polled by SSE Lambda during stream)
          │
@@ -88,12 +88,12 @@ The SSE endpoint Lambda is already running (serving the long-lived streaming res
 ```
 ┌─ Provisioning Lambda ─────────────────────────────────────────────────────┐
 │  1. Delete queue if exists (idempotent — handles retry/crash recovery)     │
-│  2. CreateQueue: eks-dx-tenant-<tenantId>-progress.fifo                   │
+│  2. CreateQueue: ecp-tenant-<tenantId>-progress.fifo                   │
 │     - ContentBasedDeduplication: false (explicit dedup IDs)                │
 │     - MessageRetentionPeriod: 3600 (1 hour)                               │
 │     - VisibilityTimeout: 10                                               │
 │     - Tag: createdAt=<ISO timestamp>                                      │
-│     - Tag: eks-dx-tenant=<tenantId>                                       │
+│     - Tag: ecp-tenant=<tenantId>                                       │
 │  3. Generate scoped STS token (sqs:SendMessage on this queue ARN)         │
 │  4. Store token in Secrets Manager                                        │
 │  5. Launch EC2                                                            │
@@ -124,7 +124,7 @@ The SSE endpoint Lambda is already running (serving the long-lived streaming res
 ### Queue Naming
 
 ```
-eks-dx-tenant-<tenantId>-progress.fifo
+ecp-tenant-<tenantId>-progress.fifo
 ```
 
 Follows existing `TenantNaming` convention. Add to `TenantNaming.java`:
@@ -156,7 +156,7 @@ aws sqs send-message --queue-url "$PROGRESS_QUEUE_URL" \
 ```
 
 **Security properties:**
-- Instance profile scoped to `arn:aws:sqs:<region>:<account>:eks-dx-tenant-<tenantId>-progress.fifo`
+- Instance profile scoped to `arn:aws:sqs:<region>:<account>:ecp-tenant-<tenantId>-progress.fifo`
 - Cannot write to any other queue (ARN mismatch)
 - Cannot create or delete queues (no `sqs:CreateQueue`/`sqs:DeleteQueue`)
 - Queue deleted on provisioning completion — instant hard revocation
@@ -172,12 +172,12 @@ Instance profile (per-tenant role, created by `TenantIamService`):
     {
       "Effect": "Allow",
       "Action": "secretsmanager:GetSecretValue",
-      "Resource": "arn:aws:secretsmanager:<region>:<account>:secret:eks-dx/tenant/<tenantId>/*"
+      "Resource": "arn:aws:secretsmanager:<region>:<account>:secret:ecp/tenant/<tenantId>/*"
     },
     {
       "Effect": "Allow",
       "Action": "sqs:SendMessage",
-      "Resource": "arn:aws:sqs:<region>:<account>:eks-dx-tenant-<tenantId>-progress.fifo"
+      "Resource": "arn:aws:sqs:<region>:<account>:ecp-tenant-<tenantId>-progress.fifo"
     }
   ]
 }
@@ -271,7 +271,7 @@ boolean validate(ProgressEvent event, int currentProgress) {
 | `TenantStreamResource` (SSE) | Replace DynamoDB GetItem polling with SQS ReceiveMessage; delete queue on terminal state |
 | Deprovision path | Delete progress queue if still exists (defensive) |
 | Rollback path | Delete progress queue in `ProvisionedResources` rollback |
-| `eks-d-xpress` → `progress.sh` | Replace `aws dynamodb update-item` with `aws sqs send-message` using instance profile creds directly |
+| `express-compute` → `progress.sh` | Replace `aws dynamodb update-item` with `aws sqs send-message` using instance profile creds directly |
 
 ### Migration Path
 
@@ -286,4 +286,4 @@ boolean validate(ProgressEvent event, int currentProgress) {
 
 - `docs/roadmap/implemented/control-plane-managed-oidc-jwks.md` — related: instance profile scoping
 - `docs/roadmap/security-hardening/ssm-only-access.md` — related: reducing instance attack surface
-- `eks-d-xpress` project: `eks-d-setup/progress.sh` — current DynamoDB write implementation (to be migrated)
+- `express-compute` project: `eks-d-setup/progress.sh` — current DynamoDB write implementation (to be migrated)

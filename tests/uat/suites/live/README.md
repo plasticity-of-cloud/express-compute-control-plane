@@ -5,7 +5,7 @@ These tests run against a **deployed AWS stack** and require real credentials.
 ## Prerequisites
 
 - `UAT_LIVE=true` environment variable set
-- A deployed `EksDXpressControlPlaneStack` in the target account/region
+- A deployed `ExpressComputeControlPlaneStack` in the target account/region
 - AWS credentials with permissions to invoke the Lambda Function URLs
 - An IAM role ARN for association tests: `UAT_ROLE_ARN=arn:aws:iam::123:role/uat-role`
 - The CLI built: `./build-local.sh --only cli --skip-tests`
@@ -33,5 +33,5 @@ UAT_ROLE_ARN=arn:aws:iam::123456789012:role/uat-test-role \
 
 If a test fails mid-way, clean up manually:
 ```bash
-eks-dx delete-cluster uat-test
+ecp delete-cluster uat-test
 ```

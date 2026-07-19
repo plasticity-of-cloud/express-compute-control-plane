@@ -1,12 +1,12 @@
-# IAM Role Setup for EKS-DX Pod Identity
+# IAM Role Setup for Express Compute Workload Identity
 
-This guide explains how to configure IAM roles so your Kubernetes workloads can assume them via EKS-DX Pod Identity.
+This guide explains how to configure IAM roles so your Kubernetes workloads can assume them via Express Compute Workload Identity.
 
 ## Prerequisites
 
-- An EKS-DX control plane deployed in your account
-- A registered cluster (`eks-dx create-cluster`)
-- The `eks-dx` CLI installed
+- An Express Compute control plane deployed in your account
+- A registered cluster (`ecp create-cluster`)
+- The `ecp` CLI installed
 
 ## Step 1: Create an IAM Role
 
@@ -24,27 +24,27 @@ aws iam attach-role-policy \
 
 ## Step 2: Tag the Role
 
-Add the `eks-dx-managed` tag so EKS-DX can automatically configure the trust policy:
+Add the `ecp-managed` tag so Express Compute can automatically configure the trust policy:
 
 ```bash
 aws iam tag-role \
   --role-name my-app-role \
-  --tags Key=eks-dx-managed,Value=true
+  --tags Key=ecp-managed,Value=true
 ```
 
-> **Without this tag**, EKS-DX cannot modify the trust policy. You'll need to configure it manually (see [Manual Trust Policy Setup](#manual-trust-policy-setup) below).
+> **Without this tag**, Express Compute cannot modify the trust policy. You'll need to configure it manually (see [Manual Trust Policy Setup](#manual-trust-policy-setup) below).
 
-## Step 3: Create the Pod Identity Association
+## Step 3: Create the Workload Identity Association
 
 ```bash
-eks-dx create-association \
+ecp create-association \
   --cluster-name my-cluster \
   --namespace default \
   --service-account my-app-sa \
   --role-arn arn:aws:iam::123456789012:role/my-app-role
 ```
 
-If the role is tagged, EKS-DX automatically adds the correct trust policy statement:
+If the role is tagged, Express Compute automatically adds the correct trust policy statement:
 
 ```
 ✓ Association created: default/my-app-sa → arn:aws:iam::123456789012:role/my-app-role
@@ -52,16 +52,16 @@ If the role is tagged, EKS-DX automatically adds the correct trust policy statem
 ✓ Trust policy updated on role
 ```
 
-## What EKS-DX Configures
+## What Express Compute Configures
 
-The trust policy statement allows the EKS-DX credential broker to assume the role, scoped to the exact cluster, namespace, and service account:
+The trust policy statement allows the Express Compute credential broker to assume the role, scoped to the exact cluster, namespace, and service account:
 
 ```json
 {
-  "Sid": "AllowEksDXmyclusterdefaultmyappsa",
+  "Sid": "AllowECPmyclusterdefaultmyappsa",
   "Effect": "Allow",
   "Principal": {
-    "AWS": "arn:aws:iam::YOUR_CONTROL_PLANE_ACCOUNT:role/EksDXCredentialBroker"
+    "AWS": "arn:aws:iam::YOUR_CONTROL_PLANE_ACCOUNT:role/ECPCredentialBroker"
   },
   "Action": ["sts:AssumeRole", "sts:TagSession"],
   "Condition": {
@@ -100,34 +100,34 @@ spec:
         image: my-app:latest
 ```
 
-The EKS-DX pod identity webhook automatically injects the credential environment variables. Your application uses AWS SDK credentials transparently — no code changes required.
+The Express Compute workload identity webhook automatically injects the credential environment variables. Your application uses AWS SDK credentials transparently — no code changes required.
 
 ## Cleanup
 
-When you delete the association, EKS-DX removes the trust statement from the role:
+When you delete the association, Express Compute removes the trust statement from the role:
 
 ```bash
-eks-dx delete-association \
+ecp delete-association \
   --cluster-name my-cluster \
   --association-id assoc-a1b2c3d4e5f6
 ```
 
 ## Manual Trust Policy Setup
 
-If you prefer not to tag your role (or cannot), EKS-DX returns the required trust statement in the API response. Apply it yourself:
+If you prefer not to tag your role (or cannot), Express Compute returns the required trust statement in the API response. Apply it yourself:
 
 ```bash
 # Get the current trust policy
 aws iam get-role --role-name my-app-role --query 'Role.AssumeRolePolicyDocument' > trust.json
 
-# Add the EKS-DX statement to the Statement array (use jq or edit manually)
+# Add the Express Compute statement to the Statement array (use jq or edit manually)
 # Then update:
 aws iam update-assume-role-policy --role-name my-app-role --policy-document file://trust.json
 ```
 
 ## Using Session Tags for Fine-Grained Access
 
-EKS-DX passes the same 6 session tags as real EKS Pod Identity. Use them in resource policies for fine-grained access:
+Express Compute passes the same 6 session tags as real EKS Workload Identity. Use them in resource policies for fine-grained access:
 
 ### S3 Bucket Policy (namespace-scoped)
 
@@ -160,15 +160,15 @@ EKS-DX passes the same 6 session tags as real EKS Pod Identity. Use them in reso
 | Tag | Example | Use Case |
 |-----|---------|----------|
 | `eks-cluster-name` | `prod-cluster` | Scope to cluster |
-| `eks-cluster-arn` | `arn:aws:eks-dx:us-east-1:123:cluster/prod` | ARN-based policies |
+| `eks-cluster-arn` | `arn:aws:ecp:us-east-1:123:cluster/prod` | ARN-based policies |
 | `kubernetes-namespace` | `production` | Scope to namespace |
 | `kubernetes-service-account` | `my-app-sa` | Scope to exact workload |
 | `kubernetes-pod-name` | `my-app-7d8f9-abc` | Audit trail |
 | `kubernetes-pod-uid` | `a1b2c3d4-...` | Audit trail |
 
-## Dual-Use Roles (EKS + EKS-DX)
+## Dual-Use Roles (EKS + Express Compute)
 
-If you're migrating from EKS or running a hybrid environment, the same role can work with both EKS Pod Identity and EKS-DX. Add both trust statements:
+If you're migrating from EKS or running a hybrid environment, the same role can work with both EKS Workload Identity and Express Compute. Add both trust statements:
 
 ```json
 {
@@ -181,9 +181,9 @@ If you're migrating from EKS or running a hybrid environment, the same role can 
       "Action": ["sts:AssumeRole", "sts:TagSession"]
     },
     {
-      "Sid": "AllowEksDXmyclusterdefaultmyappsa",
+      "Sid": "AllowECPmyclusterdefaultmyappsa",
       "Effect": "Allow",
-      "Principal": { "AWS": "arn:aws:iam::YOUR_ACCOUNT:role/EksDXCredentialBroker" },
+      "Principal": { "AWS": "arn:aws:iam::YOUR_ACCOUNT:role/ECPCredentialBroker" },
       "Action": ["sts:AssumeRole", "sts:TagSession", "sts:SetSourceIdentity"],
       "Condition": {
         "StringEquals": {
@@ -202,13 +202,13 @@ The same downstream ABAC policies (S3, DynamoDB, SQS) work for both because the 
 ## FAQ
 
 **Q: Can I use existing roles without renaming them?**  
-A: Yes. EKS-DX has no role naming constraints. Any IAM role name works.
+A: Yes. Express Compute has no role naming constraints. Any IAM role name works.
 
-**Q: What happens if I delete the `eks-dx-managed` tag after associations exist?**  
+**Q: What happens if I delete the `ecp-managed` tag after associations exist?**  
 A: Existing trust statements remain on the role (they were already applied). Future association creates/deletes for that role will require manual trust policy management.
 
 **Q: Is there a limit to how many associations a role can have?**  
-A: IAM trust policies have a 4,096 byte limit. Each scoped EKS-DX statement is ~350 bytes, allowing ~10 associations per role. For roles shared across many namespaces, use a broader condition (cluster-only).
+A: IAM trust policies have a 4,096 byte limit. Each scoped Express Compute statement is ~350 bytes, allowing ~10 associations per role. For roles shared across many namespaces, use a broader condition (cluster-only).
 
-**Q: Does EKS-DX support cross-account roles?**  
+**Q: Does Express Compute support cross-account roles?**  
 A: Not in v1.1.0. Cross-account role assumption will be supported in a future release.

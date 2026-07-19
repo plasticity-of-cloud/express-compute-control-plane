@@ -23,7 +23,7 @@ sequenceDiagram
 ```
 
 **Key classes:**
-- `EksAuthResource` — REST endpoint, request/response DTOs
+- `CredentialExchangeResource` — REST endpoint, request/response DTOs
 - `JwksTokenValidationService` — JWT validation with DynamoDB-cached JWKS
 - `AwsCredentialService` — STS AssumeRole with session tags
 
@@ -35,7 +35,7 @@ Cluster and association CRUD, JWKS refresh, trust policy management.
 
 **Key classes:**
 - `ClusterResource` — Register/deregister/describe/list clusters
-- `AssociationResource` — Create/delete/describe/list pod identity associations
+- `AssociationResource` — Create/delete/describe/list workload identitys
 - `DynamoDbClusterService` — Cluster DynamoDB operations
 - `DynamoDbAssociationService` — Association DynamoDB operations
 - `TrustPolicyService` — Adds/removes trust statements on target IAM roles
@@ -72,12 +72,12 @@ Tenant cluster lifecycle: provisioning, stop/resume, delete. Most complex module
 Sidecar that validates pod tokens via Kubernetes TokenReview (fast-fail) then forwards to credential-service Lambda.
 
 **Key classes:**
-- `EksAuthAgentResource` — Main endpoint, accepts pod token
+- `AuthProxyResource` — Main endpoint, accepts pod token
 - `TokenValidationService` — K8s TokenReview via Fabric8 client
-- `EksDxCredentialServiceClient` — HTTP forwarding to Lambda API Gateway
+- `EcpCredentialServiceClient` — HTTP forwarding to Lambda API Gateway
 - `HealthResource` — Liveness/readiness probes
 
-**Deployment**: Helm chart (`eks-d-xpress-auth-proxy`)
+**Deployment**: Helm chart (`express-compute-auth-proxy`)
 
 ### pod-identity-webhook
 
@@ -85,10 +85,10 @@ Mutating admission webhook that injects environment variables and projected toke
 
 **Key classes:**
 - `WebhookEndpoint` — Admission review handler
-- `PodIdentityMutator` — Mutation logic (env vars + token volume + volume mount)
+- `WorkloadIdentityMutator` — Mutation logic (env vars + token volume + volume mount)
 - `LambdaAssociationLookup` — Checks if pod has a matching association
 
-**Deployment**: Helm chart (`eks-d-xpress-pod-identity-webhook`)
+**Deployment**: Helm chart (`express-compute-pod-identity-webhook`)
 
 ### karpenter-support
 
@@ -103,24 +103,24 @@ EC2NodeClass mutating webhook + ValidationSucceeded status reconciler. Injects c
 - `NodePoolArchService` — Determines architectures from NodePool constraints
 - `ValidationConditionService` — Manages status conditions
 
-**Deployment**: Helm chart (`eks-d-xpress-karpenter-support`)
+**Deployment**: Helm chart (`express-compute-karpenter-support`)
 
 ## CLI
 
 Native binary providing cluster and association management.
 
 **Key classes:**
-- `EksDxCommand` — Picocli top-level command
+- `EcpCommand` — Picocli top-level command
 - `UnifiedCreateClusterCommand` — `create-cluster` (managed + self-managed)
 - `UnifiedDeleteClusterCommand` — `delete-cluster`
 - `GetClusterAccessCommand` — SSH access to managed clusters
-- `EksDxApiClient` — HTTP client with SigV4 signing
+- `EcpApiClient` — HTTP client with SigV4 signing
 - `AwsSigV4Signer` — AWS Signature V4 implementation
 - `KubeApiClient` — Reads kubeconfig, fetches OIDC/JWKS
-- `EksDxConfig` — CLI configuration (`~/.eks-dx/config`)
+- `EcpConfig` — CLI configuration (`~/.ecp/config`)
 
 ## Infrastructure (CDK)
 
 Single CDK stack deploying all control-plane resources.
 
-**Key class**: `EksDXpressControlPlaneStack` — API Gateway, Lambda functions, DynamoDB tables, IAM roles, SSM parameters.
+**Key class**: `ExpressComputeControlPlaneStack` — API Gateway, Lambda functions, DynamoDB tables, IAM roles, SSM parameters.

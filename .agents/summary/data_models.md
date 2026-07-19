@@ -2,7 +2,7 @@
 
 ## DynamoDB Tables
 
-### eks-dx-clusters
+### ecp-clusters
 
 Stores registered cluster metadata and JWKS.
 
@@ -16,7 +16,7 @@ Stores registered cluster metadata and JWKS.
 | `managed` | BOOL | — | Whether cluster is managed (provisioned) |
 | `createdAt` | S | — | ISO timestamp |
 
-### eks-dx-associations
+### ecp-workload-identities
 
 Maps service accounts to IAM roles for credential exchange.
 
@@ -32,7 +32,7 @@ Maps service accounts to IAM roles for credential exchange.
 | `serviceAccount` | S | — | K8s service account name |
 | `createdAt` | S | — | ISO timestamp |
 
-### eks-dx-tenants
+### ecp-tenants
 
 Tracks tenant provisioning state and resources.
 
@@ -125,11 +125,11 @@ Tracks AWS resources created during provisioning for compensating rollback:
 ## SSM Parameter Schema
 
 ```
-/eks-d-xpress/infra/launch-template/{arch}/{spot|ondemand}  → Launch template ID
-/eks-d-xpress/infra/ami/{arch}/{k8s-version}                → AMI ID
-/eks-d-xpress/infra/network/vpc-id                          → VPC ID
-/eks-d-xpress/control-plane/api/endpoint                    → API Gateway URL
-/eks-d-xpress/control-plane/quota/max-tenants-per-caller    → Quota limit
+/express-compute/infra/launch-template/{arch}/{spot|ondemand}  → Launch template ID
+/express-compute/infra/ami/{arch}/{k8s-version}                → AMI ID
+/express-compute/infra/network/vpc-id                          → VPC ID
+/express-compute/control-plane/api/endpoint                    → API Gateway URL
+/express-compute/control-plane/quota/max-tenants-per-caller    → Quota limit
 ```
 
 ## Tenant ID Generation

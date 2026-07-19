@@ -115,13 +115,13 @@ Deploy the CDK stack to a test account and run integration tests against the liv
 
 ```bash
 ./deploy-local.sh --context jvmTenant=true   # fast deploy for testing
-ENDPOINT=$(aws cloudformation describe-stacks --stack-name EksDXpressControlPlaneStack \
+ENDPOINT=$(aws cloudformation describe-stacks --stack-name ExpressComputeControlPlaneStack \
   --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
 ```
 
 ```java
 @QuarkusIntegrationTest
-@TestHTTPEndpoint(value = EksAuthResource.class)
+@TestHTTPEndpoint(value = CredentialExchangeResource.class)
 class CredentialServiceE2ETest {
     // Quarkus RestEasy client hits the deployed API Gateway
 }
@@ -171,7 +171,7 @@ Response response = given()
     .post("/tenants");
 ```
 
-For full IAM context testing (role resolution, `eks-dx-role` tag), mock `iam:ListRoleTags` via `@InjectMock` and inject the expected tag value.
+For full IAM context testing (role resolution, `ecp-role` tag), mock `iam:ListRoleTags` via `@InjectMock` and inject the expected tag value.
 
 ---
 

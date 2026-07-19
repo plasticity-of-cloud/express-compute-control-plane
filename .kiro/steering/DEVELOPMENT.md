@@ -10,7 +10,7 @@
 
 ### CLI Command Style
 
-- Flat AWS CLI-style: `eks-dx <verb-noun>` (e.g., `eks-dx register-cluster`, `eks-dx create-association`)
+- Flat AWS CLI-style: `ecp <verb-noun>` (e.g., `ecp register-cluster`, `ecp create-association`)
 - No nested verb/noun commands (removed in v2.2.0)
 
 ## Prerequisites
@@ -90,12 +90,12 @@ The tenant-service and CLI support GraalVM native compilation. The target archit
 
 | Module | Output | Description |
 |--------|--------|-------------|
-| credential-service | `eks-dx-credential-service/target/function.zip` | Lambda zip (JVM, SnapStart) |
-| mgmt-service | `eks-dx-mgmt-service/target/function.zip` | Lambda zip (JVM) |
-| tenant-service | `eks-dx-tenant-service/target/function.zip` | Lambda zip (native or JVM) |
-| auth-proxy | Docker image `eks-dx-auth-proxy` | In-cluster container |
-| webhook | Docker image `eks-dx-pod-identity-webhook` | In-cluster container |
-| cli | `eks-dx-cli/target/eks-dx` (native) or `target/*-runner.jar` | CLI binary |
+| credential-service | `ecp-credential-service/target/function.zip` | Lambda zip (JVM, SnapStart) |
+| mgmt-service | `ecp-mgmt-service/target/function.zip` | Lambda zip (JVM) |
+| tenant-service | `ecp-tenant-service/target/function.zip` | Lambda zip (native or JVM) |
+| auth-proxy | Docker image `ecp-auth-proxy` | In-cluster container |
+| webhook | Docker image `ecp-workload-identity-webhook` | In-cluster container |
+| cli | `ecp-cli/target/ecp` (native) or `target/*-runner.jar` | CLI binary |
 
 ## Deploy — `deploy-local.sh`
 
@@ -166,7 +166,7 @@ mvn test -Dintegration.dynamodb=true
 ./deploy-local.sh --skip-build --context jvmTenant=true
 
 # Watch logs after invoking:
-aws logs tail /aws/lambda/eks-d-xpress-tenant-service --follow --region us-east-1
+aws logs tail /aws/lambda/express-compute-tenant-service --follow --region us-east-1
 ```
 
 ### CLI
@@ -176,7 +176,7 @@ aws logs tail /aws/lambda/eks-d-xpress-tenant-service --follow --region us-east-
 ./build-local.sh --only cli --native
 
 # Run directly:
-./eks-dx-cli/target/eks-dx --help
+./ecp-cli/target/ecp --help
 ```
 
 ### CDK Stack
@@ -198,10 +198,10 @@ cd infra && cdk diff
 
 ```bash
 # Tail tenant-service logs:
-aws logs tail /aws/lambda/eks-d-xpress-tenant-service --follow --region us-east-1
+aws logs tail /aws/lambda/express-compute-tenant-service --follow --region us-east-1
 
 # Tail mgmt-service logs:
-aws logs tail /aws/lambda/eks-d-xpress-mgmt-service --follow --region us-east-1
+aws logs tail /aws/lambda/express-compute-mgmt-service --follow --region us-east-1
 ```
 
 ### Common Issues
@@ -216,7 +216,7 @@ aws logs tail /aws/lambda/eks-d-xpress-mgmt-service --follow --region us-east-1
 | Tenant EC2 instance has no public IP | `--eip` not passed and EIP allocation failed | EIP is now always allocated; redeploy tenant-service if using old build |
 | Boot script stalls silently after "EKS-D Cluster Setup" | Instance had no internet at boot (no EIP) — first `aws` CLI call timed out | Fixed by always allocating EIP; re-run setup script manually if needed |
 
-## Deploying eks-dx-karpenter-support to a Tenant Cluster
+## Deploying ecp-karpenter-support to a Tenant Cluster
 
 After making changes, build and push the image + chart:
 
@@ -233,21 +233,21 @@ Then deploy to a running tenant cluster in three steps:
 
 **1. Transfer the chart tarball to the tenant instance:**
 ```bash
-scp -i ~/.eks-d-xpress/tenants/us-east-1/<tenant-id>.pem \
-  eks-dx-karpenter-support/target/helm/kubernetes/eks-d-xpress-karpenter-support-<version>.tar.gz \
+scp -i ~/.express-compute/tenants/us-east-1/<tenant-id>.pem \
+  ecp-karpenter-support/target/helm/kubernetes/express-compute-karpenter-support-<version>.tar.gz \
   ec2-user@<tenant-ip>:/opt/eks-d-setup/charts/
 ```
 
 **2. Uninstall the existing release:**
 ```bash
-ssh -i ~/.eks-d-xpress/tenants/us-east-1/<tenant-id>.pem ec2-user@<tenant-ip> \
-  "helm uninstall eks-dx-karpenter-support -n kube-system"
+ssh -i ~/.express-compute/tenants/us-east-1/<tenant-id>.pem ec2-user@<tenant-ip> \
+  "helm uninstall ecp-karpenter-support -n kube-system"
 ```
 
 **3. Reinstall using the setup script (sources cluster.env automatically):**
 ```bash
-ssh -i ~/.eks-d-xpress/tenants/us-east-1/<tenant-id>.pem ec2-user@<tenant-ip> \
-  "sudo /opt/eks-d-setup/18-install-eks-dx-karpenter-support.sh"
+ssh -i ~/.express-compute/tenants/us-east-1/<tenant-id>.pem ec2-user@<tenant-ip> \
+  "sudo /opt/eks-d-setup/18-install-ecp-karpenter-support.sh"
 ```
 
 The script reads env vars from `/opt/eks-d/version.env` and `/opt/eks-d/cluster.env`, picks up the chart from `/opt/eks-d-setup/charts/`, and runs `helm upgrade --install` with the correct cluster identity values.
@@ -366,7 +366,7 @@ After the human merges the PR:
 
 ## Java 25 Development Best Practices
 
-- **Constants over inline strings**: All resource name prefixes, path prefixes, and repeated string literals must be declared as `static final` constants in a dedicated class (e.g., `TenantNaming`). Never inline magic strings like `"eks-dx-tenant-"` directly in business logic.
+- **Constants over inline strings**: All resource name prefixes, path prefixes, and repeated string literals must be declared as `static final` constants in a dedicated class (e.g., `TenantNaming`). Never inline magic strings like `"ecp-tenant-"` directly in business logic.
 - **Single source of truth**: If a string is used in more than one place, extract it. If it defines an AWS resource naming convention or IAM policy scope, it belongs in the naming constants class.
 - **Method accessors for compound names**: Use static factory methods (e.g., `TenantNaming.roleName(tenantId)`) rather than string concatenation in service code.
-- **Naming consistency**: All tenant-scoped AWS resources use `TenantNaming.RESOURCE_PREFIX` (`eks-dx-tenant-`). Shared infrastructure resources use `eks-d-xpress-` (CDK stack-level, not per-tenant).
+- **Naming consistency**: All tenant-scoped AWS resources use `TenantNaming.RESOURCE_PREFIX` (`ecp-tenant-`). Shared infrastructure resources use `express-compute-` (CDK stack-level, not per-tenant).

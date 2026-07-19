@@ -2,26 +2,26 @@
 
 ## Overview
 
-Software engineers self-register tenants using the `eks-dx` CLI from their DCV workstations. CI/CD pipelines (GitHub Actions) create ephemeral tenants for testing. Both authenticate via IAM SigV4, but have different quota limits enforced by the tenant-service Lambda.
+Software engineers self-register tenants using the `ecp` CLI from their DCV workstations. CI/CD pipelines (GitHub Actions) create ephemeral tenants for testing. Both authenticate via IAM SigV4, but have different quota limits enforced by the tenant-service Lambda.
 
 ## Identity Model
 
 | Persona | IAM Principal | Tag | Quota |
 |---------|--------------|-----|-------|
-| Software engineer | IAM user or assumed role | `eks-dx-role=engineer` | 1 tenant |
-| CI/CD pipeline | OIDC-federated role (GitHub) | `eks-dx-role=cicd` | Configurable (default: 10 concurrent) |
-| Platform admin | IAM role | `eks-dx-role=admin` | Unlimited |
+| Software engineer | IAM user or assumed role | `ecp-role=engineer` | 1 tenant |
+| CI/CD pipeline | OIDC-federated role (GitHub) | `ecp-role=cicd` | Configurable (default: 10 concurrent) |
+| Platform admin | IAM role | `ecp-role=admin` | Unlimited |
 
 ## IAM Policy for Engineers (Self-Registration)
 
-Each engineer's IAM user/role needs this policy to use `eks-dx` CLI:
+Each engineer's IAM user/role needs this policy to use `ecp` CLI:
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "EksDxTenantAPI",
+      "Sid": "EcpTenantAPI",
       "Effect": "Allow",
       "Action": "execute-api:Invoke",
       "Resource": [
@@ -31,16 +31,16 @@ Each engineer's IAM user/role needs this policy to use `eks-dx` CLI:
       ]
     },
     {
-      "Sid": "EksDxClusterAPI",
+      "Sid": "EcpClusterAPI",
       "Effect": "Allow",
       "Action": "execute-api:Invoke",
       "Resource": [
         "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/POST/clusters",
         "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/GET/clusters/*",
         "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/DELETE/clusters/*",
-        "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/POST/clusters/*/pod-identity-associations",
-        "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/GET/clusters/*/pod-identity-associations",
-        "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/DELETE/clusters/*/pod-identity-associations/*"
+        "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/POST/clusters/*/workload-identities",
+        "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/GET/clusters/*/workload-identities",
+        "arn:aws:execute-api:{region}:{account}:{api-id}/{stage}/DELETE/clusters/*/workload-identities/*"
       ]
     }
   ]
@@ -52,7 +52,7 @@ The engineer's IAM principal must also be tagged:
 ```json
 {
   "Tags": [
-    { "Key": "eks-dx-role", "Value": "engineer" }
+    { "Key": "ecp-role", "Value": "engineer" }
   ]
 }
 ```
@@ -83,7 +83,7 @@ GitHub Actions assumes a role via OIDC federation. The role trust policy:
 The role gets the same `execute-api:Invoke` permissions as engineers, plus the tag:
 
 ```json
-{ "Key": "eks-dx-role", "Value": "cicd" }
+{ "Key": "ecp-role", "Value": "cicd" }
 ```
 
 ## Quota Enforcement (Lambda-side)
@@ -98,7 +98,7 @@ The tenant-service Lambda reads the caller identity from the API Gateway request
 //   arn:aws:sts::123456789012:assumed-role/engineer-role/john.doe
 
 String callerArn = requestContext.getIdentity().getUserArn();
-String callerRole = getCallerEksDxRole(callerArn);  // reads eks-dx-role tag
+String callerRole = getCallerEcpRole(callerArn);  // reads ecp-role tag
 
 int maxTenants = switch (callerRole) {
     case "admin" -> Integer.MAX_VALUE;
@@ -119,7 +119,7 @@ if (existingCount >= maxTenants) {
 Add `ownerArn` to the tenants table to track who created each tenant:
 
 ```
-eks-dx-tenants:
+ecp-tenants:
 ┌──────────────────────────────────────────────────────────┐
 │ PK: tenantId                                             │
 ├──────────────────────────────────────────────────────────┤
@@ -144,28 +144,28 @@ For better performance at scale, add a GSI on `ownerArn`:
 ```
 Engineer's DCV workstation
     │
-    ├─ 1. Engineer has IAM user/role with eks-dx-role=engineer tag
+    ├─ 1. Engineer has IAM user/role with ecp-role=engineer tag
     │     (provisioned by platform admin or Terraform)
     │
-    ├─ 2. eks-dx configure
-    │     → sets endpoint, region in ~/.eks-dx/config
+    ├─ 2. ecp configure
+    │     → sets endpoint, region in ~/.ecp/config
     │
-    ├─ 3. eks-dx create-tenant my-dev --arch arm64 --ec2-pricing-model spot
+    ├─ 3. ecp create-tenant my-dev --arch arm64 --ec2-pricing-model spot
     │     │
     │     └─► CLI signs request with SigV4 (uses AWS credentials from env/profile)
     │         │
     │         └─► API Gateway validates SigV4 → forwards to tenant-service Lambda
     │             │
     │             ├─ Lambda reads callerArn from request context
-    │             ├─ Lambda reads eks-dx-role tag from IAM (cached)
+    │             ├─ Lambda reads ecp-role tag from IAM (cached)
     │             ├─ Lambda checks quota: engineer → max 1
     │             ├─ Lambda counts existing tenants for this owner
     │             ├─ If under quota → provision
     │             └─ If over quota → 429 QuotaExceededException
     │
     └─ 4. Engineer gets their single tenant
-         eks-dx describe-tenant my-dev
-         ssh -i ~/.eks-dx/keys/my-dev.pem ec2-user@<ip>
+         ecp describe-tenant my-dev
+         ssh -i ~/.ecp/keys/my-dev.pem ec2-user@<ip>
 ```
 
 ## CI/CD Flow (GitHub Actions)
@@ -178,23 +178,23 @@ jobs:
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/github-cicd-eks-dx
+          role-to-assume: arn:aws:iam::123456789012:role/github-cicd-ecp
           aws-region: us-east-1
 
       - name: Create ephemeral tenant
         run: |
-          eks-dx create-tenant ci-${{ github.run_id }} \
+          ecp create-tenant ci-${{ github.run_id }} \
             --arch arm64 --ec2-pricing-model spot
 
       - name: Run tests against tenant cluster
         run: |
-          eks-dx kubeconfig ci-${{ github.run_id }} > ~/.kube/config
+          ecp kubeconfig ci-${{ github.run_id }} > ~/.kube/config
           kubectl apply -f manifests/
           kubectl wait --for=condition=ready pod -l app=myapp
 
       - name: Cleanup
         if: always()
-        run: eks-dx delete-tenant ci-${{ github.run_id }}
+        run: ecp delete-tenant ci-${{ github.run_id }}
 ```
 
 ## API Response on Quota Exceeded
@@ -212,10 +212,10 @@ HTTP 429 Too Many Requests
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `eks-dx.quota.engineer-max-tenants` | 1 | Max tenants per engineer |
-| `eks-dx.quota.cicd-max-tenants` | 10 | Max concurrent tenants per CI/CD role |
-| `eks-dx.quota.admin-max-tenants` | unlimited | No limit for admins |
-| `eks-dx.quota.tag-cache-ttl-minutes` | 15 | Cache duration for IAM tag lookups |
+| `ecp.quota.engineer-max-tenants` | 1 | Max tenants per engineer |
+| `ecp.quota.cicd-max-tenants` | 10 | Max concurrent tenants per CI/CD role |
+| `ecp.quota.admin-max-tenants` | unlimited | No limit for admins |
+| `ecp.quota.tag-cache-ttl-minutes` | 15 | Cache duration for IAM tag lookups |
 
 ## IAM Permissions for Quota Check
 
@@ -239,14 +239,14 @@ resource "aws_iam_user" "engineer" {
   for_each = var.engineers
   name     = each.key
   tags = {
-    "eks-dx-role" = "engineer"
+    "ecp-role" = "engineer"
   }
 }
 
 resource "aws_iam_user_policy" "eks_dx_access" {
   for_each = var.engineers
   user     = aws_iam_user.engineer[each.key].name
-  name     = "eks-dx-api-access"
+  name     = "ecp-api-access"
   policy   = data.aws_iam_policy_document.eks_dx_engineer.json
 }
 ```
@@ -255,10 +255,10 @@ For GitHub Actions OIDC role:
 
 ```hcl
 resource "aws_iam_role" "github_cicd" {
-  name               = "github-cicd-eks-dx"
+  name               = "github-cicd-ecp"
   assume_role_policy = data.aws_iam_policy_document.github_oidc_trust.json
   tags = {
-    "eks-dx-role" = "cicd"
+    "ecp-role" = "cicd"
   }
 }
 ```

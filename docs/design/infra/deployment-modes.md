@@ -2,14 +2,14 @@
 
 ## Summary
 
-The EKS-DX control plane supports three deployment modes that control which Lambda
-functions are deployed and whether the `eks-d-xpress-infra` stack is required as a
+The Express Compute control plane supports three deployment modes that control which Lambda
+functions are deployed and whether the `express-compute-infra` stack is required as a
 dependency.
 
 ## Motivation
 
 Currently the CDK stack unconditionally resolves SSM parameters from the
-`eks-d-xpress-infra` stack (launch templates, VPC ID) and deploys the tenant-service
+`express-compute-infra` stack (launch templates, VPC ID) and deploys the tenant-service
 Lambda. This creates a hard dependency on the infra stack even when deploying only for
 self-managed cluster registration — a use case that needs nothing beyond the credential
 and management Lambdas.
@@ -18,7 +18,7 @@ Introducing explicit deployment modes:
 1. Removes the infra stack dependency for self-managed-only deployments.
 2. Makes the deployment scope explicit and auditable.
 3. Allows lighter deployments (fewer Lambdas, fewer IAM permissions) for users who
-   only need Pod Identity credential exchange.
+   only need Workload Identity credential exchange.
 
 ## Deployment Modes
 
@@ -37,7 +37,7 @@ and register them with their own JWKS/issuer. No EC2 provisioning capability.
 - credential-service Lambda (SnapStart) — credential exchange hot path
 - mgmt-service Lambda — cluster/association CRUD, JWKS refresh
 - API Gateway (REST) — routes for `/clusters/{name}/assets`, management endpoints
-- DynamoDB tables — `eks-dx-clusters`, `eks-dx-associations`
+- DynamoDB tables — `ecp-clusters`, `ecp-workload-identities`
 - CloudWatch log groups
 - IAM roles for credential-service and mgmt-service only
 
@@ -45,27 +45,27 @@ and register them with their own JWKS/issuer. No EC2 provisioning capability.
 - tenant-service Lambda
 - Tenant Function URL
 - KMS CA signing key
-- DynamoDB `eks-d-xpress-tenants` table
+- DynamoDB `express-compute-tenants` table
 - SSM parameter lookups from infra stack
 - Tenant-scoped IAM permissions (EC2, VPC, SQS, DLM, Secrets Manager)
 
 **SSM parameters written:**
-- `/eks-d-xpress/control-plane/api/endpoint` — API Gateway URL (always written)
+- `/express-compute/control-plane/api/endpoint` — API Gateway URL (always written)
 
 ### managed
 
-For operators who want EKS-DX to provision and manage EKS-D clusters on EC2.
+For operators who want Express Compute to provision and manage EKS-D clusters on EC2.
 Only managed clusters are supported — self-managed registration is disabled.
 
-**Requires:** `eks-d-xpress-infra` stack deployed first (provides launch templates,
+**Requires:** `express-compute-infra` stack deployed first (provides launch templates,
 AMI IDs, VPC ID via SSM).
 
 **What is deployed:**
 - Everything in self-managed mode, plus:
 - tenant-service Lambda with Function URL (streaming)
 - KMS asymmetric key for CA signing
-- DynamoDB `eks-d-xpress-tenants` table
-- SSM parameter lookups (`/eks-d-xpress/infra/...`)
+- DynamoDB `express-compute-tenants` table
+- SSM parameter lookups (`/express-compute/infra/...`)
 - Full tenant IAM permissions
 
 **Behavior difference from hybrid:** The `POST /clusters` endpoint rejects requests
@@ -76,7 +76,7 @@ with `jwks`/`issuer` fields (self-managed mode is disabled at the API level).
 Supports both self-managed cluster registration AND managed tenant provisioning.
 This is the current behavior and the default if no `deploymentMode` is specified.
 
-**Requires:** `eks-d-xpress-infra` stack deployed first.
+**Requires:** `express-compute-infra` stack deployed first.
 
 **What is deployed:** Same as managed.
 
@@ -99,7 +99,7 @@ cdk deploy
 cdk deploy --context deploymentMode=hybrid
 ```
 
-### Changes to `EksDXpressControlPlaneStack.java`
+### Changes to `ExpressComputeControlPlaneStack.java`
 
 1. Read `deploymentMode` from CDK context (default: `hybrid`).
 2. Define a boolean `deployTenantService = !mode.equals("self-managed")`.
@@ -115,9 +115,9 @@ cdk deploy --context deploymentMode=hybrid
 ### Environment Variable Propagation
 
 When `deployTenantService = false`:
-- `EKS_DX_LT_*` and `EKS_DX_VPC_ID` are not set on any Lambda
-- `EKS_DX_TENANTS_TABLE` is not set
-- `EKS_DX_KMS_CA_KEY_ID` is not set
+- `ECP_LT_*` and `ECP_VPC_ID` are not set on any Lambda
+- `ECP_TENANTS_TABLE` is not set
+- `ECP_KMS_CA_KEY_ID` is not set
 
 ### deploy-local.sh Integration
 
@@ -138,7 +138,7 @@ When deployed in `managed` mode (not hybrid), the tenant-service should reject
 self-managed registration attempts. This is enforced via an environment variable:
 
 ```
-EKS_DX_DEPLOYMENT_MODE=managed
+ECP_DEPLOYMENT_MODE=managed
 ```
 
 The `ClusterResource.createCluster()` method checks:

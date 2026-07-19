@@ -1,14 +1,14 @@
-# EKS-D-Xpress First-Boot Script Design
+# Express Compute First-Boot Script Design
 
-Reference for the first-boot script bundled in the EKS-D-Xpress Golden AMI.
-The script lives in the **`eks-d-xpress`** project (AMI build pipeline), not in this
+Reference for the first-boot script bundled in the Express Compute Golden AMI.
+The script lives in the **`express-compute`** project (AMI build pipeline), not in this
 repo. This document describes the design contract between the AMI and the control plane.
 This script runs once on first boot, driven by a `systemd` one-shot unit.
 
 ## Progress reporting
 
-The instance writes progress directly to the `eks-dx-tenants` DynamoDB table.
-The SSE Lambda (`eks-dx-tenant-service`) polls this table every 5 seconds and
+The instance writes progress directly to the `ecp-tenants` DynamoDB table.
+The SSE Lambda (`ecp-tenant-service`) polls this table every 5 seconds and
 streams the current state to the CLI/UI. No callback to Lambda — one `UpdateItem`
 call per step.
 
@@ -21,7 +21,7 @@ call per step.
 | `pulling-key` | 20 | Fetching SA signing key from Secrets Manager (full variant only) |
 | `kubeadm-init` | 40 | `kubeadm init` running |
 | `kubeadm-done` | 70 | `kubeadm init` completed |
-| `registering` | 85 | Calling `eks-dx register-cluster` |
+| `registering` | 85 | Calling `ecp register-cluster` |
 | `ready` | 100 | Cluster registered, in-cluster components installed |
 | `failed` | — | Error stored in `error` field |
 
@@ -31,7 +31,7 @@ call per step.
 update_progress() {
   local state=$1 phase=$2 progress=$3
   aws dynamodb update-item \
-    --table-name "${EKS_DX_TENANTS_TABLE:-eks-dx-tenants}" \
+    --table-name "${ECP_TENANTS_TABLE:-ecp-tenants}" \
     --key "{\"tenantId\":{\"S\":\"${TENANT_ID}\"}}" \
     --update-expression "SET #s = :s, phase = :p, progress = :n, updatedAt = :t" \
     --expression-attribute-names '{"#s":"state"}' \
@@ -47,7 +47,7 @@ update_progress() {
 fail() {
   local msg=$1
   aws dynamodb update-item \
-    --table-name "${EKS_DX_TENANTS_TABLE:-eks-dx-tenants}" \
+    --table-name "${ECP_TENANTS_TABLE:-ecp-tenants}" \
     --key "{\"tenantId\":{\"S\":\"${TENANT_ID}\"}}" \
     --update-expression "SET #s = :s, #e = :e, updatedAt = :t" \
     --expression-attribute-names '{"#s":"state","#e":"error"}' \
@@ -73,7 +73,7 @@ INSTANCE_ID=$(curl -sf http://169.254.169.254/latest/meta-data/instance-id)
 # From EC2 instance tags (set by provisioner Lambda)
 TENANT_ID=$(aws ec2 describe-tags \
   --filters "Name=resource-id,Values=${INSTANCE_ID}" \
-            "Name=key,Values=eks-dx-tenant" \
+            "Name=key,Values=ecp-tenant" \
   --query 'Tags[0].Value' --output text \
   --region "${AWS_REGION:-us-east-1}")
 ```
@@ -100,7 +100,7 @@ update_progress "pulling-key" "Fetching SA signing key from Secrets Manager" 20
 
 mkdir -p /etc/kubernetes/pki
 aws secretsmanager get-secret-value \
-  --secret-id "eks-dx/t/${TENANT_ID}/signing-key" \
+  --secret-id "ecp/t/${TENANT_ID}/signing-key" \
   --query SecretString --output text \
   --region "${AWS_REGION}" > /etc/kubernetes/pki/sa.key
 chmod 600 /etc/kubernetes/pki/sa.key
@@ -115,7 +115,7 @@ kubeadm init \
   --service-account-signing-key-file /etc/kubernetes/pki/sa.key \
   --service-account-issuer "https://${PUBLIC_IP}" \
   --pod-network-cidr 10.244.0.0/16 \
-  >> /var/log/eks-dx-init.log 2>&1
+  >> /var/log/ecp-init.log 2>&1
 
 update_progress "kubeadm-done" "kubeadm init completed" 70
 
@@ -125,34 +125,34 @@ cp /etc/kubernetes/admin.conf /home/ec2-user/.kube/config
 chown ec2-user:ec2-user /home/ec2-user/.kube/config
 
 # --- Register cluster ---
-update_progress "registering" "Registering cluster with eks-dx" 85
+update_progress "registering" "Registering cluster with ecp" 85
 
 # Derive JWKS from sa.pub
 kubectl get --raw /openid/v1/jwks \
   --kubeconfig /etc/kubernetes/admin.conf > /tmp/jwks.json
 
-eks-dx register-cluster "${CLUSTER_NAME}" \
+ecp register-cluster "${CLUSTER_NAME}" \
   --issuer "https://${PUBLIC_IP}" \
   --jwks-file /tmp/jwks.json
 
 # --- Install in-cluster components ---
-# Images are pre-baked in the AMI; Helm charts are bundled at /opt/eks-dx/charts/
-helm install eks-dx-auth-proxy /opt/eks-dx/charts/eks-dx-auth-proxy \
+# Images are pre-baked in the AMI; Helm charts are bundled at /opt/ecp/charts/
+helm install ecp-auth-proxy /opt/ecp/charts/ecp-auth-proxy \
   --namespace kube-system \
-  --set app.envs.EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}" \
+  --set app.envs.ECP_ENDPOINT="${ECP_ENDPOINT}" \
   --set app.envs.EKS_CLUSTER_NAME="${CLUSTER_NAME}" \
   --kubeconfig /etc/kubernetes/admin.conf
 
-helm install eks-dx-pod-identity-webhook /opt/eks-dx/charts/eks-dx-pod-identity-webhook \
+helm install ecp-workload-identity-webhook /opt/ecp/charts/ecp-workload-identity-webhook \
   --namespace kube-system \
-  --set app.envs.EKS_DX_ENDPOINT="${EKS_DX_ENDPOINT}" \
+  --set app.envs.ECP_ENDPOINT="${ECP_ENDPOINT}" \
   --set app.envs.EKS_CLUSTER_NAME="${CLUSTER_NAME}" \
   --kubeconfig /etc/kubernetes/admin.conf
 
 # --- Done ---
 # Write publicIp to DynamoDB so CLI/UI can display it
 aws dynamodb update-item \
-  --table-name "${EKS_DX_TENANTS_TABLE:-eks-dx-tenants}" \
+  --table-name "${ECP_TENANTS_TABLE:-ecp-tenants}" \
   --key "{\"tenantId\":{\"S\":\"${TENANT_ID}\"}}" \
   --update-expression "SET #s = :s, phase = :p, progress = :n, publicIp = :ip, updatedAt = :t" \
   --expression-attribute-names '{"#s":"state"}' \
@@ -180,7 +180,7 @@ update_progress "kubeadm-init" "kubeadm init running" 40
 kubeadm init \
   --service-account-issuer "https://${PUBLIC_IP}" \
   --pod-network-cidr 10.244.0.0/16 \
-  >> /var/log/eks-dx-init.log 2>&1
+  >> /var/log/ecp-init.log 2>&1
 
 # sa.key and sa.pub are now at /etc/kubernetes/pki/sa.{key,pub}
 # rest of script is identical
@@ -193,8 +193,8 @@ Set these via EC2 user data (injected by provisioner Lambda at `RunInstances` ti
 ```bash
 export TENANT_ID=acme-staging
 export AWS_REGION=us-east-1
-export EKS_DX_ENDPOINT=https://abc123.execute-api.us-east-1.amazonaws.com/prod
-export EKS_DX_TENANTS_TABLE=eks-dx-tenants   # optional, defaults to eks-dx-tenants
+export ECP_ENDPOINT=https://abc123.execute-api.us-east-1.amazonaws.com/prod
+export ECP_TENANTS_TABLE=ecp-tenants   # optional, defaults to ecp-tenants
 ```
 
 ## IAM permissions used by the script
@@ -203,33 +203,33 @@ All granted by the per-tenant instance profile role created by the provisioner L
 
 | Action | Resource | Used for |
 |---|---|---|
-| `secretsmanager:GetSecretValue` | `eks-dx/t/{tenantId}/*` | SA signing key fetch |
+| `secretsmanager:GetSecretValue` | `ecp/t/{tenantId}/*` | SA signing key fetch |
 | `execute-api:Invoke` | `POST /clusters/{tenantId}` | Cluster self-registration |
-| `dynamodb:UpdateItem` | `eks-dx-tenants` (own item only) | Progress reporting |
+| `dynamodb:UpdateItem` | `ecp-tenants` (own item only) | Progress reporting |
 
 ## Bundling in the AMI
 
-The AMI build (`ecp-eks-dx-infra`) should:
+The AMI build (`ecp-ecp-infra`) should:
 
-1. Install: `kubeadm`, `kubelet`, `kubectl`, `eks-dx` CLI, `helm`, `aws-cli v2`
-2. Pre-pull container images: `eks-dx-auth-proxy`, `eks-dx-pod-identity-webhook`
-3. Bundle Helm charts at `/opt/eks-dx/charts/`
-4. Install the first-boot script at `/opt/eks-dx/first-boot.sh` (chmod +x)
+1. Install: `kubeadm`, `kubelet`, `kubectl`, `ecp` CLI, `helm`, `aws-cli v2`
+2. Pre-pull container images: `ecp-auth-proxy`, `ecp-workload-identity-webhook`
+3. Bundle Helm charts at `/opt/ecp/charts/`
+4. Install the first-boot script at `/opt/ecp/first-boot.sh` (chmod +x)
 5. Install a `systemd` one-shot unit that runs the script on first boot:
 
 ```ini
-# /etc/systemd/system/eks-dx-first-boot.service
+# /etc/systemd/system/ecp-first-boot.service
 [Unit]
-Description=EKS-DX first-boot cluster initialization
+Description=Express Compute first-boot cluster initialization
 After=network-online.target cloud-init.service
 Wants=network-online.target
-ConditionPathExists=!/var/lib/eks-dx-first-boot.done
+ConditionPathExists=!/var/lib/ecp-first-boot.done
 
 [Service]
 Type=oneshot
 User=root
-ExecStart=/opt/eks-dx/first-boot.sh
-ExecStartPost=/usr/bin/touch /var/lib/eks-dx-first-boot.done
+ExecStart=/opt/ecp/first-boot.sh
+ExecStartPost=/usr/bin/touch /var/lib/ecp-first-boot.done
 RemainAfterExit=yes
 StandardOutput=journal
 StandardError=journal

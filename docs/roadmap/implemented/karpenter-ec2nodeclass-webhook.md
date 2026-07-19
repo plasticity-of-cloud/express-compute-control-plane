@@ -2,7 +2,7 @@
 
 ## Status: Implemented (v2.0.0, June 2026)
 
-**Module:** `eks-dx-karpenter-support`
+**Module:** `ecp-karpenter-support`
 **Key files:** `Ec2NodeClassWebhookResource.java`, `UserDataMergeService.java`
 
 ## Problem
@@ -57,11 +57,11 @@ print(str(list(net.hosts())[9]))
 **Pain points:**
 - Values must be re-supplied on every Helm upgrade
 - Drift risk if cluster endpoint or CA rotates
-- Couples Karpenter chart config to eks-dx cluster registration data
+- Couples Karpenter chart config to ecp cluster registration data
 
 ## Proposed Solution
 
-A new, standalone module `eks-dx-ec2nodeclass-webhook` (separate from `eks-dx-pod-identity-webhook`, which serves only as a reference implementation). On `CREATE` and `UPDATE` of `EC2NodeClass`, the webhook:
+A new, standalone module `ecp-ec2nodeclass-webhook` (separate from `ecp-workload-identity-webhook`, which serves only as a reference implementation). On `CREATE` and `UPDATE` of `EC2NodeClass`, the webhook:
 
 1. Reads cluster identity from in-cluster sources (same discovery logic above, but server-side)
 2. Detects the node variant from `EC2NodeClass.spec.amiFamily` (`Bottlerocket` vs `AL2`/`AL2023`)
@@ -70,7 +70,7 @@ A new, standalone module `eks-dx-ec2nodeclass-webhook` (separate from `eks-dx-po
 ### New Module
 
 ```
-eks-dx-ec2nodeclass-webhook/   # Standalone Quarkus app, mirrors structure of eks-dx-pod-identity-webhook
+ecp-ec2nodeclass-webhook/   # Standalone Quarkus app, mirrors structure of ecp-workload-identity-webhook
   src/main/java/.../
     resource/Ec2NodeClassWebhookResource.java   # POST /mutate-ec2nodeclass
     service/ClusterIdentityService.java          # Resolves + caches cluster fields
@@ -79,7 +79,7 @@ eks-dx-ec2nodeclass-webhook/   # Standalone Quarkus app, mirrors structure of ek
   Dockerfile
 ```
 
-`eks-dx-pod-identity-webhook` is **not modified** — it remains the reference template for how to build a Quarkus admission webhook in this repo.
+`ecp-workload-identity-webhook` is **not modified** — it remains the reference template for how to build a Quarkus admission webhook in this repo.
 
 ### Webhook Trigger
 
@@ -87,13 +87,13 @@ eks-dx-ec2nodeclass-webhook/   # Standalone Quarkus app, mirrors structure of ek
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: eks-dx-ec2nodeclass-injector
+  name: ecp-ec2nodeclass-injector
 webhooks:
-- name: ec2nodeclass.eks-dx.codriverlabs.ai
+- name: ec2nodeclass.ecp.codriverlabs.ai
   admissionReviewVersions: ["v1"]
   clientConfig:
     service:
-      name: eks-dx-ec2nodeclass-webhook
+      name: ecp-ec2nodeclass-webhook
       namespace: kube-system
       path: /mutate-ec2nodeclass
   rules:
@@ -117,7 +117,7 @@ The webhook resolves cluster fields once on startup and caches them (refreshed o
 | `certificateAuthority` | `configmap/kube-root-ca.crt` in `kube-system` |
 | `serviceCidr` | `configmap/kubeadm-config` in `kube-system` → `ClusterConfiguration.serviceSubnet` |
 | `clusterDnsIp` | 10th host of `serviceCidr` (e.g. `10.96.0.0/12` → `10.96.0.10`) |
-| `clusterName` | `configmap/eks-dx-config` in `kube-system` (written by `eks-dx` CLI at registration) |
+| `clusterName` | `configmap/ecp-config` in `kube-system` (written by `ecp` CLI at registration) |
 
 ### Mutation Logic
 
@@ -157,7 +157,7 @@ If `spec.userData` already contains the managed fields (idempotency check), the 
 
 ## RBAC Requirements
 
-Additional permissions needed by the **`eks-dx-ec2nodeclass-webhook`** ServiceAccount:
+Additional permissions needed by the **`ecp-ec2nodeclass-webhook`** ServiceAccount:
 
 ```yaml
 rules:
@@ -167,7 +167,7 @@ rules:
   verbs: ["get"]
 - apiGroups: [""]
   resources: ["configmaps"]
-  resourceNames: ["kube-root-ca.crt", "kubeadm-config", "eks-dx-config"]
+  resourceNames: ["kube-root-ca.crt", "kubeadm-config", "ecp-config"]
   verbs: ["get"]
 - apiGroups: ["karpenter.k8s.aws"]
   resources: ["ec2nodeclasses"]
@@ -181,10 +181,10 @@ rules:
 | Webhook down blocks EC2NodeClass creation | `failurePolicy: Ignore` — Karpenter proceeds without injection |
 | Stale cached values after CA rotation | Phase 3 watch + re-patch; Phase 1/2 TTL-based refresh |
 | TOML/MIME merge corrupts existing userData | Unit-tested merge logic; webhook rejects on parse error rather than corrupting |
-| `kubeadm-config` absent (non-kubeadm clusters) | Fallback: read `serviceCidr` from `eks-dx-config` ConfigMap written at registration |
+| `kubeadm-config` absent (non-kubeadm clusters) | Fallback: read `serviceCidr` from `ecp-config` ConfigMap written at registration |
 
 ## Implementation Order
 
-1. **Phase 1** — new `eks-dx-ec2nodeclass-webhook` module (use `eks-dx-pod-identity-webhook` as structural reference), cluster identity resolver, TOML/MIME merge logic
+1. **Phase 1** — new `ecp-ec2nodeclass-webhook` module (use `ecp-workload-identity-webhook` as structural reference), cluster identity resolver, TOML/MIME merge logic
 2. **Phase 2** — Helm chart cleanup (coordinate with tenant Helm chart release)
 3. **Phase 3** — CA rotation watch (independent, can ship later)

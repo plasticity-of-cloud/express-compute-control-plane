@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Robot Framework / Python 3 UAT suite that verifies every `eks-dx` CLI command
+A Robot Framework / Python 3 UAT suite that verifies every `ecp` CLI command
 from the user's perspective: correct exit codes, stdout/stderr content, file side
 effects, and error messages.
 
@@ -67,8 +67,8 @@ class MockServerLibrary:
 ```
 
 The CLI reads its endpoint from environment variables:
-- `EKS_DX_PROVISIONING_URL` — provisioning Function URL (tenant-service)
-- `EKS_DX_ENDPOINT` — management API Gateway endpoint
+- `ECP_PROVISIONING_URL` — provisioning Function URL (tenant-service)
+- `ECP_ENDPOINT` — management API Gateway endpoint
 
 Both are pointed at `http://localhost:{port}` in mock mode.
 
@@ -77,13 +77,13 @@ Both are pointed at `http://localhost:{port}` in mock mode.
 ## What each suite tests
 
 ### 01_help_and_version.robot
-- `eks-dx --help` exits 0 and lists all subcommands
-- `eks-dx --version` exits 0
-- `eks-dx unknown-command` exits non-zero with usage hint
+- `ecp --help` exits 0 and lists all subcommands
+- `ecp --version` exits 0
+- `ecp unknown-command` exits non-zero with usage hint
 - Each subcommand `--help` exits 0
 
 ### 02_configure.robot
-- `eks-dx configure` writes `~/.eks-d-xpress/config`
+- `ecp configure` writes `~/.express-compute/config`
 - Subsequent reads resolve the configured endpoint
 - Missing endpoint → actionable error
 
@@ -139,22 +139,22 @@ Both are pointed at `http://localhost:{port}` in mock mode.
 ### live/01_full_lifecycle.robot (UAT_LIVE=true only)
 ```
 Given a deployed stack and valid credentials
-When I run: eks-dx create-cluster uat-test --wait
+When I run: ecp create-cluster uat-test --wait
 Then the cluster reaches state=ready within 15 minutes
-And eks-dx get-cluster-access uat-test prints a public IP
+And ecp get-cluster-access uat-test prints a public IP
 And the .pem file exists locally with mode 600
 And SSH connection succeeds
 
-When I run: eks-dx stop-cluster uat-test
+When I run: ecp stop-cluster uat-test
 Then state transitions to stopped within 5 minutes
 
-When I run: eks-dx resume-cluster uat-test
+When I run: ecp resume-cluster uat-test
 Then state transitions to ready within 5 minutes
 
-When I run: eks-dx create-association uat-test default my-sa <role-arn>
-Then eks-dx list-associations uat-test shows the association
+When I run: ecp create-association uat-test default my-sa <role-arn>
+Then ecp list-associations uat-test shows the association
 
-When I run: eks-dx delete-cluster uat-test
+When I run: ecp delete-cluster uat-test
 Then the cluster is removed from list-clusters output
 ```
 
@@ -173,7 +173,7 @@ pip3 install -r tests/uat/requirements.txt
 ./tests/uat/run-uat.sh
 
 # Run a single suite
-robot --variable CLI_JAR:$(ls eks-dx-cli/target/*-runner.jar) \
+robot --variable CLI_JAR:$(ls ecp-cli/target/*-runner.jar) \
   tests/uat/suites/03_create_cluster.robot
 
 # Run live tests (requires deployed stack + AWS credentials)

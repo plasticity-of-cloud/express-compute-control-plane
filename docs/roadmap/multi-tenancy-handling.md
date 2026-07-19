@@ -6,7 +6,7 @@
 
 Each tenant gets a single IAM role + instance profile named:
 ```
-eks-d-xpress-tenant-{tenantId}-instance-role
+express-compute-tenant-{tenantId}-instance-role
 ```
 
 Created by `TenantIamService` in the tenant Lambda. Role and instance profile share the same name.
@@ -20,7 +20,7 @@ the instance profile grants EC2 permissions that are arch-agnostic.
 
 Naming convention (single/multi-arch, single/multi-tenancy):
 ```
-eks-d-xpress-tenant-{tenantId}-instance-role
+express-compute-tenant-{tenantId}-instance-role
 ```
 
 `configure-nodepools.sh` derives this name directly from `$TENANT_ID` in `cluster.env`.
@@ -73,9 +73,9 @@ public record TenantItem(
 
 All IAM resources derived from `tenantId` remain stable:
 ```
-eks-d-xpress-tenant-{tenantId}-instance-role
-eks-d-xpress-tenant-{tenantId}-arm64-instance-role    # multi-arch future
-eks-d-xpress-tenant-{tenantId}-x86_64-instance-role   # multi-arch future
+express-compute-tenant-{tenantId}-instance-role
+express-compute-tenant-{tenantId}-arm64-instance-role    # multi-arch future
+express-compute-tenant-{tenantId}-x86_64-instance-role   # multi-arch future
 ```
 
 ### Usage Flow

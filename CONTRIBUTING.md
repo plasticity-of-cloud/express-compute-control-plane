@@ -1,4 +1,4 @@
-# Contributing to EKS-D-Xpress
+# Contributing to Express Compute
 
 Thank you for your interest in contributing! This document explains
 how to set up your development environment, run the test suite, and submit changes.
@@ -17,7 +17,7 @@ This is a one-time, frictionless process:
 
 The CLA grants Plasticity.Cloud Limited and CoDriverLabs Limited a non-exclusive, perpetual, worldwide,
 royalty-free license to use, modify, and distribute your contribution in all versions of
-EKS-D-Xpress (Community and PRO). You retain full copyright ownership of your code.
+Express Compute (Community and PRO). You retain full copyright ownership of your code.
 
 ---
 
@@ -34,14 +34,14 @@ EKS-D-Xpress (Community and PRO). You retain full copyright ownership of your co
 ## Repository Structure
 
 ```
-eks-dx-credential-service/   Lambda: credential exchange (hot path, SnapStart)
-eks-dx-mgmt-service/         Lambda: cluster/association CRUD
-eks-dx-tenant-service/       Lambda: tenant provisioning + lifecycle
-eks-dx-auth-proxy/           In-cluster proxy (TokenReview + forwarding)
-eks-dx-pod-identity-webhook/ Admission webhook (env + volume injection)
-eks-dx-karpenter-support/    EC2NodeClass webhook + reconciler
-eks-dx-cli/                  Native CLI (create-cluster, delete-cluster, etc.)
-eks-dx-model/                Shared library (TokenClaims, CallerIdentity)
+ecp-credential-service/   Lambda: credential exchange (hot path, SnapStart)
+ecp-mgmt-service/         Lambda: cluster/association CRUD
+ecp-tenant-service/       Lambda: tenant provisioning + lifecycle
+ecp-auth-proxy/           In-cluster proxy (TokenReview + forwarding)
+ecp-workload-identity-webhook/ Admission webhook (env + volume injection)
+ecp-karpenter-support/    EC2NodeClass webhook + reconciler
+ecp-cli/                  Native CLI (create-cluster, delete-cluster, etc.)
+ecp-model/                Shared library (TokenClaims, CallerIdentity)
 infra/                       CDK stack (Java, primary deployment path)
 docs/                        Architecture, design, user guides
 ```
@@ -53,8 +53,8 @@ docs/                        Architecture, design, user guides
 ### 1. Fork and clone
 
 ```bash
-git clone https://github.com/<your-fork>/eks-d-xpress-control-plane.git
-cd eks-d-xpress-control-plane
+git clone https://github.com/<your-fork>/express-compute-control-plane.git
+cd express-compute-control-plane
 ```
 
 ### 2. Create a feature branch
@@ -160,4 +160,4 @@ Email **support@codriverlabs.ai** with subject `[Security]`. We will respond wit
 - **Discussions**: GitHub Discussions
 - **Bug Reports**: GitHub Issues
 
-Thank you for making EKS-D-Xpress better!
+Thank you for making Express Compute better!

@@ -2,9 +2,9 @@
 
 ## Overview
 
-When creating an EKS Pod Identity Association (EPIA), the real AWS EKS
+When creating an EKS Workload Identity Association (EPIA), the real AWS EKS
 `CreatePodIdentityAssociation` API performs validation on the IAM role ARN
-before storing the association. EKS-DX must replicate this behavior.
+before storing the association. Express Compute must replicate this behavior.
 
 ## AWS EKS Validation Behavior
 
@@ -27,7 +27,7 @@ An error occurred (InvalidParameterException):
 
 ### 2. Trust policy check
 
-EKS also validates that the role's trust policy allows the EKS Pod Identity
+EKS also validates that the role's trust policy allows the EKS Workload Identity
 service principal (`pods.eks.amazonaws.com`) to assume it. If the trust
 policy is missing, the API returns an error.
 
@@ -45,11 +45,11 @@ create a second association for the same service account returns
 - Error: `InvalidParameterException` — returned when the role does not exist
   or the trust policy is incorrect.
 
-## EKS-DX Implementation
+## Express Compute Implementation
 
 ### Implemented
 
-| Check | EKS behavior | EKS-DX behavior | Status |
+| Check | EKS behavior | Express Compute behavior | Status |
 |-------|-------------|-----------------|--------|
 | Role exists | `iam:GetRole` → 404 = reject | `iam:GetRole` → 404 = reject | ✅ |
 | Trust policy | Verifies role trusts `pods.eks.amazonaws.com` | Verifies trust policy allows `sts:AssumeRole` | ✅ |
@@ -75,6 +75,6 @@ role existence:
 }
 ```
 
-> **Note:** Since v2.1.0, the `eks-dx-pod-*` naming constraint is removed. Roles are scoped
-> via the `eks-dx-managed=true` resource tag and session tag conditions on the trust policy.
+> **Note:** Since v2.1.0, the `ecp-pod-*` naming constraint is removed. Roles are scoped
+> via the `ecp-managed=true` resource tag and session tag conditions on the trust policy.
 > See [trust-policy-management.md](trust-policy-management.md) for details.

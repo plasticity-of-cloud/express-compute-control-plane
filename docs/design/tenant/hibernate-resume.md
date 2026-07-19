@@ -40,7 +40,7 @@ Running Instance (m6g.large, 8GB RAM)
 ### On-demand (tenant service API)
 - Tenant idle detection → hibernate (saves compute cost)
 - Tenant activity / API call → resume
-- CLI: `eks-dx stop-tenant my-tenant` / `eks-dx resume-tenant my-tenant`
+- CLI: `ecp stop-tenant my-tenant` / `ecp resume-tenant my-tenant`
 
 ## Implementation
 
@@ -96,7 +96,7 @@ public void resume(String tenantId) {
             terminated              terminated
 ```
 
-DynamoDB `eks-dx-tenants` table stores current state:
+DynamoDB `ecp-tenants` table stores current state:
 
 | tenantId | instanceId | state | arch | ec2PricingModel |
 |----------|-----------|-------|------|-----------------|
@@ -104,7 +104,7 @@ DynamoDB `eks-dx-tenants` table stores current state:
 
 ## IAM Permissions Required
 
-Add to CDK stack (`EksDxStack.java`) for the tenant Lambda:
+Add to CDK stack (`EcpStack.java`) for the tenant Lambda:
 
 ```java
 tenantFn.addToRolePolicy(PolicyStatement.Builder.create()
@@ -127,7 +127,7 @@ New actions: `ec2:StopInstances`, `ec2:StartInstances`
 | Encrypted root EBS volume | ✅ configured in LT |
 | Root volume ≥ RAM (30GB > 8GB) | ✅ |
 | m6g.large supports hibernation | ✅ |
-| Spot LT: `instance_interruption_behavior = "hibernate"` | ✅ in eks-dx-infra |
+| Spot LT: `instance_interruption_behavior = "hibernate"` | ✅ in ecp-infra |
 | Spot LT: `spot_instance_type = "persistent"` | ✅ enables auto-resume |
 
 ## Cost Impact
@@ -148,5 +148,5 @@ EventBridge rule → every 15 min → check CloudWatch metric (API calls = 0 for
     → invoke tenant Lambda → hibernate
 ```
 
-Resume is always explicit: `eks-dx resume-tenant my-tenant` (CLI or API).
+Resume is always explicit: `ecp resume-tenant my-tenant` (CLI or API).
 The auth-proxy runs inside the tenant cluster, so it cannot trigger resume when the instance is stopped.

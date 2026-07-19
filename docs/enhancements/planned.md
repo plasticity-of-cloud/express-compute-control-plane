@@ -9,11 +9,11 @@ Add a usage plan with throttling to limit request rates per API key or globally.
 
 ```yaml
 # CDK stack addition
-EksDxUsagePlan:
+EcpUsagePlan:
   Type: AWS::ApiGateway::UsagePlan
-  DependsOn: EksDxApiprodStage
+  DependsOn: EcpApiprodStage
   Properties:
-    UsagePlanName: eks-dx-default
+    UsagePlanName: ecp-default
     Throttle:
       BurstLimit: 50      # max concurrent requests
       RateLimit: 20       # requests per second
@@ -21,7 +21,7 @@ EksDxUsagePlan:
       Limit: 100000       # requests per month
       Period: MONTH
     ApiStages:
-      - ApiId: !Ref EksDxApi
+      - ApiId: !Ref EcpApi
         Stage: prod
 ```
 
@@ -39,7 +39,7 @@ Restrict API Gateway access to known CIDR ranges using a resource policy.
 
 ```yaml
 # CDK stack addition
-EksDxApi:
+EcpApi:
   Type: AWS::Serverless::Api
   Properties:
     # ... existing config ...

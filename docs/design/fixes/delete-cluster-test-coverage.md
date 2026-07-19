@@ -9,7 +9,7 @@ security groups, and IAM roles were left as orphaned resources.
 
 ### Root Cause
 
-The cluster record in `eks-d-xpress-clusters` was missing the `managed=true` field (likely
+The cluster record in `express-compute-clusters` was missing the `managed=true` field (likely
 created by an older code path before the field was consistently written). The `deleteCluster()`
 method defaults to self-managed when the field is absent:
 

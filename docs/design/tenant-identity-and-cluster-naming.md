@@ -64,11 +64,11 @@ Pattern: ^[a-zA-Z][a-zA-Z0-9-]{0,99}$
 
 ### Scope
 
-The cluster name is **scoped to a region**. The same name can be reused across regions (e.g. a CI/CD pipeline creating `ci-pipeline` in `us-east-1` and `eu-west-1`). Uniqueness is enforced within the `eks-d-xpress-clusters` DynamoDB table in each deployment region.
+The cluster name is **scoped to a region**. The same name can be reused across regions (e.g. a CI/CD pipeline creating `ci-pipeline` in `us-east-1` and `eu-west-1`). Uniqueness is enforced within the `express-compute-clusters` DynamoDB table in each deployment region.
 
 ### Registration
 
-The cluster name is what gets registered in `eks-d-xpress-clusters` (for pod identity associations) and is visible to workloads via the credential exchange flow. It serves the same purpose as an EKS cluster name — it's how pods and operators reference the cluster.
+The cluster name is what gets registered in `express-compute-clusters` (for workload identitys) and is visible to workloads via the credential exchange flow. It serves the same purpose as an EKS cluster name — it's how pods and operators reference the cluster.
 
 **For managed tenants:** The `tenant-service` Lambda pre-registers the cluster before EC2 boots. `TenantCryptoService` generates KMS-signed CA + SA signing keys, derives JWKS, and `preRegisterCluster()` writes the cluster record (with JWKS and issuer) to DynamoDB. No `register-cluster` CLI call is needed from the boot script.
 
@@ -76,10 +76,10 @@ The cluster name is what gets registered in `eks-d-xpress-clusters` (for pod ide
 
 ```bash
 # Managed (provisions EC2 + EKS-D, pre-registers JWKS automatically):
-eks-dx create-cluster my-dev-cluster --wait
+ecp create-cluster my-dev-cluster --wait
 
 # Self-managed (register with user-provided JWKS):
-eks-dx create-cluster my-k3s \
+ecp create-cluster my-k3s \
   --issuer https://my-k3s-host \
   --jwks-file /path/to/jwks.json
 ```
@@ -88,7 +88,7 @@ eks-dx create-cluster my-k3s \
 
 ```
 ┌─────────────────────────────────────────────────┐
-│ DynamoDB: eks-d-xpress-tenants                   │
+│ DynamoDB: express-compute-tenants                   │
 ├─────────────────────────────────────────────────┤
 │ PK: tenantId = "a7f3b2c1"                       │
 │ clusterName = "my-dev-cluster"                  │
@@ -100,7 +100,7 @@ eks-dx create-cluster my-k3s \
 └─────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────┐
-│ DynamoDB: eks-d-xpress-clusters                  │
+│ DynamoDB: express-compute-clusters                  │
 ├─────────────────────────────────────────────────┤
 │ PK: clusterName = "my-dev-cluster"              │
 │ tenantId = "a7f3b2c1"                           │
@@ -115,13 +115,13 @@ A single tenant owns one virtual cluster. The cluster name is user-chosen and va
 
 ## DynamoDB Schema
 
-**Table: `eks-d-xpress-tenants`** (PK: `tenantId`)
+**Table: `express-compute-tenants`** (PK: `tenantId`)
 
 | Attribute | Type | Notes |
 |---|---|---|
 | `tenantId` | String (PK) | System-derived 8-char hex hash |
 | `clusterName` | String | User-provided, validated |
-| `managed` | String | `"true"` = EKS-D-Xpress provisioned EC2; `"false"` = standalone cluster |
+| `managed` | String | `"true"` = Express Compute provisioned EC2; `"false"` = standalone cluster |
 | `idcUserId` | String | Identity Center user ID (audit trail, input to hash) |
 | `ownerArn` | String | Caller IAM ARN |
 | `createdAt` | String | ISO-8601, immutable |
@@ -136,7 +136,7 @@ A single tenant owns one virtual cluster. The cluster name is user-chosen and va
 | `ec2PricingModel` | String | `spot` or `ondemand` (managed only) |
 | `error` | String | Set on provisioning failure (managed only) |
 
-**Table: `eks-d-xpress-clusters`** (PK: `clusterName`)
+**Table: `express-compute-clusters`** (PK: `clusterName`)
 
 | Attribute | Type | Notes |
 |---|---|---|
@@ -155,41 +155,41 @@ All AWS resources use the **tenant ID** (not the cluster name) to stay within IA
 ### Naming Constants (`TenantNaming.java`)
 
 ```java
-public static final String RESOURCE_PREFIX = "eks-dx-tenant-";
-public static final String SECRET_PREFIX = "eks-dx/tenant/";
+public static final String RESOURCE_PREFIX = "ecp-tenant-";
+public static final String SECRET_PREFIX = "ecp/tenant/";
 ```
 
 ### Resource Table
 
 | Resource | Name | Example |
 |----------|------|---------|
-| Instance role | `eks-dx-tenant-{tenantId}-ir` | `eks-dx-tenant-a7f3b2c1-ir` |
-| Instance profile | `eks-dx-tenant-{tenantId}-ir` | (same as role) |
-| DLM role | `eks-dx-tenant-{tenantId}-dlm` | `eks-dx-tenant-a7f3b2c1-dlm` |
-| Key pair | `eks-dx-tenant-{tenantId}-key` | `eks-dx-tenant-a7f3b2c1-key` |
-| Security group | `eks-dx-tenant-{tenantId}-sg` | `eks-dx-tenant-a7f3b2c1-sg` |
-| Interruption queue | `eks-dx-tenant-{clusterName}` | `eks-dx-tenant-my-dev-cluster` |
-| Progress queue | `eks-dx-tenant-{tenantId}-progress.fifo` | `eks-dx-tenant-a7f3b2c1-progress.fifo` |
-| EventBridge rules | `eks-dx-tenant-{clusterName}-{suffix}` | `eks-dx-tenant-my-dev-cluster-spot` |
-| Secrets (SSH) | `eks-dx/tenant/{tenantId}/ssh-key` | `eks-dx/tenant/a7f3b2c1/ssh-key` |
-| Secrets (CA key) | `eks-dx/tenant/{tenantId}/ca-key` | `eks-dx/tenant/a7f3b2c1/ca-key` |
-| Secrets (CA cert) | `eks-dx/tenant/{tenantId}/ca-crt` | `eks-dx/tenant/a7f3b2c1/ca-crt` |
-| Secrets (SA key) | `eks-dx/tenant/{tenantId}/sa-key` | `eks-dx/tenant/a7f3b2c1/sa-key` |
-| EC2 tag | `eks-dx-tenant: {tenantId}` | `eks-dx-tenant: a7f3b2c1` |
-| Platform tag | `Platform: eks-d-xpress` | (all resources) |
+| Instance role | `ecp-tenant-{tenantId}-ir` | `ecp-tenant-a7f3b2c1-ir` |
+| Instance profile | `ecp-tenant-{tenantId}-ir` | (same as role) |
+| DLM role | `ecp-tenant-{tenantId}-dlm` | `ecp-tenant-a7f3b2c1-dlm` |
+| Key pair | `ecp-tenant-{tenantId}-key` | `ecp-tenant-a7f3b2c1-key` |
+| Security group | `ecp-tenant-{tenantId}-sg` | `ecp-tenant-a7f3b2c1-sg` |
+| Interruption queue | `ecp-tenant-{clusterName}` | `ecp-tenant-my-dev-cluster` |
+| Progress queue | `ecp-tenant-{tenantId}-progress.fifo` | `ecp-tenant-a7f3b2c1-progress.fifo` |
+| EventBridge rules | `ecp-tenant-{clusterName}-{suffix}` | `ecp-tenant-my-dev-cluster-spot` |
+| Secrets (SSH) | `ecp/tenant/{tenantId}/ssh-key` | `ecp/tenant/a7f3b2c1/ssh-key` |
+| Secrets (CA key) | `ecp/tenant/{tenantId}/ca-key` | `ecp/tenant/a7f3b2c1/ca-key` |
+| Secrets (CA cert) | `ecp/tenant/{tenantId}/ca-crt` | `ecp/tenant/a7f3b2c1/ca-crt` |
+| Secrets (SA key) | `ecp/tenant/{tenantId}/sa-key` | `ecp/tenant/a7f3b2c1/sa-key` |
+| EC2 tag | `ecp-tenant: {tenantId}` | `ecp-tenant: a7f3b2c1` |
+| Platform tag | `Platform: express-compute` | (all resources) |
 
 ### Factory Methods
 
 ```java
-TenantNaming.roleName(tenantId)           // eks-dx-tenant-{id}-ir
-TenantNaming.instanceProfileName(tenantId) // eks-dx-tenant-{id}-ir
-TenantNaming.dlmRoleName(tenantId)        // eks-dx-tenant-{id}-dlm
-TenantNaming.securityGroupName(tenantId)  // eks-dx-tenant-{id}-sg
-TenantNaming.keyPairName(tenantId)        // eks-dx-tenant-{id}-key
-TenantNaming.secretPath(tenantId, name)   // eks-dx/tenant/{id}/{name}
-TenantNaming.queueName(clusterName)       // eks-dx-tenant-{clusterName}
-TenantNaming.progressQueueName(tenantId)  // eks-dx-tenant-{id}-progress.fifo
-TenantNaming.eventRuleName(clusterName, suffix)  // eks-dx-tenant-{clusterName}-{suffix}
+TenantNaming.roleName(tenantId)           // ecp-tenant-{id}-ir
+TenantNaming.instanceProfileName(tenantId) // ecp-tenant-{id}-ir
+TenantNaming.dlmRoleName(tenantId)        // ecp-tenant-{id}-dlm
+TenantNaming.securityGroupName(tenantId)  // ecp-tenant-{id}-sg
+TenantNaming.keyPairName(tenantId)        // ecp-tenant-{id}-key
+TenantNaming.secretPath(tenantId, name)   // ecp/tenant/{id}/{name}
+TenantNaming.queueName(clusterName)       // ecp-tenant-{clusterName}
+TenantNaming.progressQueueName(tenantId)  // ecp-tenant-{id}-progress.fifo
+TenantNaming.eventRuleName(clusterName, suffix)  // ecp-tenant-{clusterName}-{suffix}
 ```
 
 ## Local CLI Paths
@@ -197,19 +197,19 @@ TenantNaming.eventRuleName(clusterName, suffix)  // eks-dx-tenant-{clusterName}-
 The CLI stores the SSH private key locally at:
 
 ```
-~/.eks-d-xpress/tenants/{region}/{tenantId}.pem
+~/.express-compute/tenants/{region}/{tenantId}.pem
 ```
 
 Using `tenantId` (not `clusterName`) because the same cluster name can exist in multiple regions — keying by `clusterName` would cause path collisions for users running, e.g., a `ci-pipeline` cluster in both `us-east-1` and `eu-west-1`.
 
 ## First Boot Script
 
-The boot script lives in the **`eks-d-xpress`** project (Golden AMI build). It receives both `TENANT_ID` and `CLUSTER_NAME` via `/opt/eks-d/cluster.env` (written by `TenantEc2Service` at instance launch).
+The boot script lives in the **`express-compute`** project (Golden AMI build). It receives both `TENANT_ID` and `CLUSTER_NAME` via `/opt/eks-d/cluster.env` (written by `TenantEc2Service` at instance launch).
 
 | Variable | Used for |
 |----------|----------|
 | `TENANT_ID` | Progress reporting (SQS MessageGroupId), resource tag lookups |
-| `CLUSTER_NAME` | `EKS_CLUSTER_NAME` Helm value, `EKS_DX_API_URL` path |
+| `CLUSTER_NAME` | `EKS_CLUSTER_NAME` Helm value, `ECP_API_URL` path |
 | `PROGRESS_QUEUE_URL` | SQS FIFO queue for boot progress events |
 
 The boot script does **not** call `register-cluster` — the cluster is pre-registered by the provisioning Lambda (with JWKS derived from KMS-generated SA keys) before the EC2 instance launches.
@@ -263,7 +263,7 @@ Response (both):
 
 ### Delete (`DELETE /clusters/{name}`)
 
-Determines teardown scope from the `managed` field in `eks-d-xpress-clusters`:
+Determines teardown scope from the `managed` field in `express-compute-clusters`:
 - `managed=true` → full deprovision (EC2, EIP, IAM, network, secrets, SQS, DLM, DynamoDB)
 - `managed=false` → remove DynamoDB records only
 
@@ -271,20 +271,20 @@ Determines teardown scope from the `managed` field in `eks-d-xpress-clusters`:
 
 ```bash
 # Managed (provisions EC2 + EKS-D, pre-registers JWKS):
-eks-dx create-cluster my-dev-cluster --wait
+ecp create-cluster my-dev-cluster --wait
 # → Streams progress via SSE until ready
 
 # Self-managed (register with user-provided JWKS):
-eks-dx create-cluster my-k3s --issuer https://... --jwks-file jwks.json
+ecp create-cluster my-k3s --issuer https://... --jwks-file jwks.json
 
 # Delete (full teardown for managed, deregister for self-managed):
-eks-dx delete-cluster my-dev-cluster
+ecp delete-cluster my-dev-cluster
 
 # Describe:
-eks-dx describe-cluster my-dev-cluster
+ecp describe-cluster my-dev-cluster
 
 # List all:
-eks-dx list-clusters
+ecp list-clusters
 ```
 
 ## Validation Implementation
@@ -307,7 +307,7 @@ private void validateClusterName(String name) {
 3. **`clusterName` is region-scoped, not globally unique** — same name allowed in different regions
 4. **AWS resources and SSH key paths use `tenantId`** — stable, unique, short, no user input
 5. **Boot script uses `CLUSTER_NAME`** for in-cluster components — workloads reference the cluster by name
-6. **CLI commands use cluster name** — `eks-dx create-cluster <name>`, `eks-dx delete-cluster <name>`
+6. **CLI commands use cluster name** — `ecp create-cluster <name>`, `ecp delete-cluster <name>`
 7. **`managed` field in clusters table** — determines delete behavior (full teardown vs deregister)
 8. **8-char hex hash** — 32 bits of entropy, ~4 billion unique values
 9. **Pre-registration** — JWKS written to DynamoDB before EC2 boots (KMS-backed PKI)

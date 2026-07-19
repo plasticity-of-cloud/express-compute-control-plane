@@ -1,6 +1,6 @@
-# EKS-DX Integration: EKS-D-Xpress (kubeadm + EKS-D on EC2)
+# Express Compute Integration: Express Compute (kubeadm + EKS-D on EC2)
 
-EKS-D-Xpress clusters are provisioned automatically via the `eks-dx create-cluster` command.
+Express Compute clusters are provisioned automatically via the `ecp create-cluster` command.
 The control plane generates all PKI material (CA + SA signing key), pre-registers the cluster
 JWKS in DynamoDB, and launches EC2. The instance is a stateless consumer — it fetches
 pre-generated keys from Secrets Manager during boot.
@@ -9,7 +9,7 @@ pre-generated keys from Secrets Manager during boot.
 
 - AWS account with CDK stack deployed (see [deployment.md](deployment.md))
 - Shared infra applied (VPC, subnets, Launch Template, AMI — see `infra/`)
-- `eks-dx` CLI installed
+- `ecp` CLI installed
 - `ENDPOINT` env var set to your API Gateway URL
 
 ---
@@ -17,16 +17,16 @@ pre-generated keys from Secrets Manager during boot.
 ## 1. Provision a cluster
 
 ```bash
-eks-dx configure --endpoint $ENDPOINT --region us-east-1
+ecp configure --endpoint $ENDPOINT --region us-east-1
 
 # Provision and wait for completion (~5-8 minutes)
-eks-dx create-cluster --name acme-staging --wait
+ecp create-cluster --name acme-staging --wait
 
 # With options
-eks-dx create-cluster --name acme-staging --arch arm64 --pricing spot --wait
+ecp create-cluster --name acme-staging --arch arm64 --pricing spot --wait
 
 # With JSON output for CI/CD
-RESULT=$(eks-dx create-cluster --name acme-staging --wait --output json)
+RESULT=$(ecp create-cluster --name acme-staging --wait --output json)
 PUBLIC_IP=$(echo $RESULT | jq -r .publicIp)
 ```
 
@@ -39,11 +39,11 @@ Created cluster "acme-staging" (tenant: t-abc123, managed)
   [ 40%] Control plane ready  (+180s)
   [ 55%] VPC CNI installed  (+200s)
   [ 80%] Metrics server installed  (+240s)
-  [ 98%] eks-dx-karpenter-support installed  (+280s)
+  [ 98%] ecp-karpenter-support installed  (+280s)
 
 ✓ Cluster ready.
   Public IP: 54.12.34.56
-  SSH key: ~/.eks-d-xpress/tenants/us-east-1/t-abc123.pem
+  SSH key: ~/.express-compute/tenants/us-east-1/t-abc123.pem
 ```
 
 ### What happens automatically
@@ -51,7 +51,7 @@ Created cluster "acme-staging" (tenant: t-abc123, managed)
 1. **Control plane (Lambda, before EC2 launch):**
    - Generates per-tenant CA key pair, signs CA cert via shared KMS key
    - Generates SA signing key pair, derives JWKS
-   - Stores CA key, CA cert, SA key in Secrets Manager (`eks-dx/tenant/<id>/`)
+   - Stores CA key, CA cert, SA key in Secrets Manager (`ecp/tenant/<id>/`)
    - Pre-registers cluster in DynamoDB (JWKS + issuer known immediately)
    - Launches EC2 with Golden AMI
 
@@ -61,7 +61,7 @@ Created cluster "acme-staging" (tenant: t-abc123, managed)
    - Writes all to `/etc/kubernetes/pki/` — kubeadm does not regenerate
    - Runs `kubeadm init` with deterministic `service-account-issuer`
    - Installs VPC CNI, cloud-provider, cert-manager, EBS CSI, Karpenter
-   - Installs `eks-dx-auth-proxy` and `eks-dx-pod-identity-webhook` via Helm
+   - Installs `ecp-auth-proxy` and `ecp-workload-identity-webhook` via Helm
    - Updates DynamoDB state to `ready`
 
 No manual cluster registration is needed — JWKS is pre-registered before boot.
@@ -73,7 +73,7 @@ No manual cluster registration is needed — JWKS is pre-registered before boot.
 ```bash
 # Retrieve SSH key
 aws secretsmanager get-secret-value \
-  --secret-id eks-dx/tenant/acme-staging/ssh-key \
+  --secret-id ecp/tenant/acme-staging/ssh-key \
   --query SecretString --output text > acme-staging.pem
 chmod 600 acme-staging.pem
 
@@ -87,26 +87,26 @@ export KUBECONFIG=acme-staging.kubeconfig
 
 ---
 
-## 3. Create pod identity associations
+## 3. Create workload identitys
 
 First, prepare your IAM role (see [IAM Role Setup](iam/iam-role-setup.md) for full details):
 
 ```bash
-# Tag the role so EKS-DX can manage the trust policy automatically
-aws iam tag-role --role-name my-role --tags Key=eks-dx-managed,Value=true
+# Tag the role so Express Compute can manage the trust policy automatically
+aws iam tag-role --role-name my-role --tags Key=ecp-managed,Value=true
 ```
 
 Then create the association:
 
 ```bash
-eks-dx create-association \
+ecp create-association \
   --cluster-name acme-staging \
   --namespace my-app \
   --service-account my-sa \
   --role-arn arn:aws:iam::123456789012:role/my-role
 ```
 
-EKS-DX automatically configures the role's trust policy. No role naming constraints apply.
+Express Compute automatically configures the role's trust policy. No role naming constraints apply.
 
 ---
 
@@ -129,7 +129,7 @@ kubectl --kubeconfig acme-staging.kubeconfig logs aws-test -n my-app
 ## 5. Deprovision
 
 ```bash
-eks-dx delete-cluster acme-staging
+ecp delete-cluster acme-staging
 ```
 
 This terminates the EC2 instance, deletes both Secrets Manager secrets, removes the cluster
@@ -143,17 +143,17 @@ registration from DynamoDB, deletes the per-tenant IAM role, and removes the EC2
   any other cluster name (IAM resource ARN scoped to the exact path)
 - The SA signing key persists in Secrets Manager for the cluster lifetime — required for
   disaster recovery and re-provisioning
-- Delete the tenant via `eks-dx delete-cluster` rather than terminating the EC2 instance
+- Delete the tenant via `ecp delete-cluster` rather than terminating the EC2 instance
   directly, to ensure all secrets and IAM resources are cleaned up
 
 ---
 
 ## Differences from k3s integration
 
-| | k3s | EKS-D-Xpress |
+| | k3s | Express Compute |
 |---|---|---|
-| Cluster registration | Manual (`eks-dx create-cluster --oidc-mode self-managed`) | Automatic (first-boot script) |
+| Cluster registration | Manual (`ecp create-cluster --oidc-mode self-managed`) | Automatic (first-boot script) |
 | OIDC issuer | Set via `--kube-apiserver-arg` | Set by `kubeadm init` |
 | SA signing key | Generated by k3s | Pre-generated by provisioner Lambda, stored in SM |
 | In-cluster components | Installed manually via Helm | Pre-baked in AMI, installed on first boot |
-| Deprovisioning | Manual | `eks-dx delete-cluster` |
+| Deprovisioning | Manual | `ecp delete-cluster` |

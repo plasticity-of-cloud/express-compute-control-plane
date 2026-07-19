@@ -1,4 +1,4 @@
-# EKS-DX Architecture
+# Express Compute Architecture
 
 ## 1. System Overview
 
@@ -6,14 +6,14 @@
 graph TB
     subgraph "Kubernetes Cluster (k3s / microk8s / EKS-D)"
         Pod["Application Pod"]
-        Agent["EKS Pod Identity Agent<br/>(DaemonSet, 169.254.170.23)"]
-        Proxy["eks-dx-auth-proxy<br/>(TokenReview + forwarding)"]
-        Webhook["eks-dx-pod-identity-webhook<br/>(Admission Controller)"]
+        Agent["EKS Workload Identity Agent<br/>(DaemonSet, 169.254.170.23)"]
+        Proxy["ecp-auth-proxy<br/>(TokenReview + forwarding)"]
+        Webhook["ecp-workload-identity-webhook<br/>(Admission Controller)"]
         KubeAPI["Kubernetes API Server"]
     end
 
     subgraph "Developer Machine"
-        CLI["eks-dx CLI<br/>(native binary)"]
+        CLI["ecp CLI<br/>(native binary)"]
     end
 
     subgraph "AWS (Serverless)"
@@ -21,9 +21,9 @@ graph TB
         CredLambda["credential-service<br/>(SnapStart, 512MB)"]
         MgmtLambda["mgmt-service<br/>(JVM, 256MB)"]
         TenantLambda["tenant-service<br/>(native arm64, 128MB)"]
-        DDBClusters["DynamoDB<br/>eks-dx-clusters"]
-        DDBAssoc["DynamoDB<br/>eks-dx-associations"]
-        DDBTenants["DynamoDB<br/>eks-dx-tenants"]
+        DDBClusters["DynamoDB<br/>ecp-clusters"]
+        DDBAssoc["DynamoDB<br/>ecp-workload-identities"]
+        DDBTenants["DynamoDB<br/>ecp-tenants"]
         STS["AWS STS<br/>(AssumeRole)"]
         CW["CloudWatch<br/>(Alarms + Logs)"]
     end
@@ -58,8 +58,8 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant Pod as Application Pod
-    participant Agent as Pod Identity Agent
-    participant Proxy as eks-dx-auth-proxy
+    participant Agent as Workload Identity Agent
+    participant Proxy as ecp-auth-proxy
     participant K8s as K8s API Server
     participant GW as API Gateway
     participant Lambda as credential-service
@@ -98,13 +98,13 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User as Developer
-    participant CLI as eks-dx CLI
+    participant CLI as ecp CLI
     participant K8s as K8s API Server
     participant GW as API Gateway (IAM auth)
     participant Lambda as mgmt-service
-    participant DDB as DynamoDB (eks-dx-clusters)
+    participant DDB as DynamoDB (ecp-clusters)
 
-    User->>CLI: eks-dx register-cluster --name my-k3s --region us-east-1
+    User->>CLI: ecp register-cluster --name my-k3s --region us-east-1
     CLI->>K8s: GET /openid/v1/jwks
     K8s-->>CLI: JWKS JSON (public keys)
     CLI->>K8s: GET /.well-known/openid-configuration
@@ -121,19 +121,19 @@ sequenceDiagram
     CLI-->>User: ✓ Cluster "my-k3s" registered
 ```
 
-## 4. Pod Identity Association Management
+## 4. Workload Identity Association Management
 
 ```mermaid
 sequenceDiagram
     participant User as Developer
-    participant CLI as eks-dx CLI
+    participant CLI as ecp CLI
     participant GW as API Gateway (IAM auth)
     participant Lambda as mgmt-service
-    participant DDB as DynamoDB (eks-dx-associations)
+    participant DDB as DynamoDB (ecp-workload-identities)
 
-    User->>CLI: eks-dx create-association<br/>--cluster-name my-k3s<br/>--namespace default --service-account my-app<br/>--role-arn arn:aws:iam::...:role/my-role
+    User->>CLI: ecp create-association<br/>--cluster-name my-k3s<br/>--namespace default --service-account my-app<br/>--role-arn arn:aws:iam::...:role/my-role
 
-    CLI->>GW: POST /clusters/my-k3s/pod-identity-associations<br/>(SigV4 signed)
+    CLI->>GW: POST /clusters/my-k3s/workload-identities<br/>(SigV4 signed)
     GW->>Lambda: Invoke
     Lambda->>DDB: GetItem(CLUSTER#my-k3s, default#my-app)
     DDB-->>Lambda: Not found (no duplicate)
@@ -149,13 +149,13 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant K8s as K8s API Server
-    participant WH as eks-dx-pod-identity-webhook
+    participant WH as ecp-workload-identity-webhook
     participant GW as API Gateway
     participant Lambda as mgmt-service
 
     K8s->>WH: AdmissionReview (CREATE Pod)<br/>namespace=default, sa=my-app
 
-    WH->>GW: GET /clusters/{name}/pod-identity-associations<br/>?namespace=default&serviceAccount=my-app<br/>(Bearer: projected SA token)
+    WH->>GW: GET /clusters/{name}/workload-identities<br/>?namespace=default&serviceAccount=my-app<br/>(Bearer: projected SA token)
     GW->>Lambda: Invoke
     Lambda-->>GW: 200 {associations: [{...}]}
     GW-->>WH: Association found ✓
@@ -259,7 +259,7 @@ graph LR
         IAM_C["/clusters<br/>GET, POST — IAM auth"]
         IAM_CN["/clusters/{name}<br/>GET, DELETE — IAM auth"]
         IAM_J["/clusters/{name}/jwks<br/>PUT — IAM auth"]
-        ASSOC["/clusters/{name}/pod-identity-associations<br/>ANY — SA token auth"]
+        ASSOC["/clusters/{name}/workload-identities<br/>ANY — SA token auth"]
     end
 
     subgraph "Lambda"
@@ -269,9 +269,9 @@ graph LR
     end
 
     subgraph "DynamoDB"
-        T1["eks-dx-clusters<br/>PAY_PER_REQUEST · PITR"]
-        T2["eks-dx-associations<br/>PAY_PER_REQUEST · PITR"]
-        T3["eks-dx-tenants<br/>PAY_PER_REQUEST · PITR"]
+        T1["ecp-clusters<br/>PAY_PER_REQUEST · PITR"]
+        T2["ecp-workload-identities<br/>PAY_PER_REQUEST · PITR"]
+        T3["ecp-tenants<br/>PAY_PER_REQUEST · PITR"]
     end
 
     subgraph "CloudWatch"
@@ -302,21 +302,21 @@ graph LR
 
 ```mermaid
 graph TD
-    EKS_DX["eks-dx"]
-    EKS_DX --> CONFIGURE["configure"]
-    EKS_DX --> RC["register-cluster"]
-    EKS_DX --> DRC["deregister-cluster"]
-    EKS_DX --> DC["describe-cluster"]
-    EKS_DX --> LC["list-clusters"]
-    EKS_DX --> UC["update-cluster"]
-    EKS_DX --> CA["create-association"]
-    EKS_DX --> DA["delete-association"]
-    EKS_DX --> DSA["describe-association"]
-    EKS_DX --> LA["list-associations"]
-    EKS_DX --> CT["create-tenant"]
-    EKS_DX --> DT["delete-tenant"]
-    EKS_DX --> ST["stop-tenant"]
-    EKS_DX --> RT["resume-tenant"]
+    ECP["ecp"]
+    ECP --> CONFIGURE["configure"]
+    ECP --> RC["register-cluster"]
+    ECP --> DRC["deregister-cluster"]
+    ECP --> DC["describe-cluster"]
+    ECP --> LC["list-clusters"]
+    ECP --> UC["update-cluster"]
+    ECP --> CA["create-association"]
+    ECP --> DA["delete-association"]
+    ECP --> DSA["describe-association"]
+    ECP --> LA["list-associations"]
+    ECP --> CT["create-tenant"]
+    ECP --> DT["delete-tenant"]
+    ECP --> ST["stop-tenant"]
+    ECP --> RT["resume-tenant"]
 ```
 
 ## 10. Deployment Topology
@@ -331,22 +331,22 @@ graph TB
     end
 
     subgraph "Cluster A (k3s on EC2)"
-        A_Agent["Pod Identity Agent"]
-        A_Proxy["eks-dx-auth-proxy"]
+        A_Agent["Workload Identity Agent"]
+        A_Proxy["ecp-auth-proxy"]
         A_Webhook["Webhook"]
         A_Pods["Application Pods"]
     end
 
     subgraph "Cluster B (microk8s on-prem)"
-        B_Agent["Pod Identity Agent"]
-        B_Proxy["eks-dx-auth-proxy"]
+        B_Agent["Workload Identity Agent"]
+        B_Proxy["ecp-auth-proxy"]
         B_Webhook["Webhook"]
         B_Pods["Application Pods"]
     end
 
     subgraph "Cluster C (EKS-D)"
-        C_Agent["Pod Identity Agent"]
-        C_Proxy["eks-dx-auth-proxy"]
+        C_Agent["Workload Identity Agent"]
+        C_Proxy["ecp-auth-proxy"]
         C_Webhook["Webhook"]
         C_Pods["Application Pods"]
     end

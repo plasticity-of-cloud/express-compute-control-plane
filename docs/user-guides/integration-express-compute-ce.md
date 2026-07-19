@@ -1,19 +1,19 @@
-# EKS-DX Integration: EKS-D-Xpress Community Edition (kubeadm + EKS-D on EC2)
+# Express Compute Integration: Express Compute Community Edition (kubeadm + EKS-D on EC2)
 
-EKS-D-Xpress CE is a simplified variant where kubeadm generates its own SA signing key
+Express Compute CE is a simplified variant where kubeadm generates its own SA signing key
 on first boot. The JWKS is derived from that key **after** `kubeadm init` and then
-registered with eks-dx. There is no pre-provisioned signing key in Secrets Manager.
+registered with ecp. There is no pre-provisioned signing key in Secrets Manager.
 
 > **Note:** This means the SA signing key is not backed up. If the instance is terminated
 > and reprovisioned, a new key is generated and the cluster must be re-registered
-> (`eks-dx create-cluster --oidc-mode self-managed` again with the new JWKS). For production use with key persistence,
-> see [integration-eks-d-xpress.md](integration-eks-d-xpress.md).
+> (`ecp create-cluster --oidc-mode self-managed` again with the new JWKS). For production use with key persistence,
+> see [integration-express-compute.md](integration-express-compute.md).
 
 ## Prerequisites
 
 - AWS account with CDK stack deployed (see [deployment.md](deployment.md))
 - Terraform infra applied (VPC, subnets, Launch Template, AMI — see `infra/`)
-- `eks-dx` CLI installed
+- `ecp` CLI installed
 - `ENDPOINT` env var set to your API Gateway URL
 
 ---
@@ -21,13 +21,13 @@ registered with eks-dx. There is no pre-provisioned signing key in Secrets Manag
 ## 1. Provision a tenant cluster
 
 ```bash
-eks-dx configure --endpoint $ENDPOINT --region us-east-1
+ecp configure --endpoint $ENDPOINT --region us-east-1
 
 # Provision and wait for completion (~5-8 minutes)
-eks-dx create-cluster acme-staging --wait
+ecp create-cluster acme-staging --wait
 
 # With JSON output for CI/CD
-RESULT=$(eks-dx create-cluster acme-staging --wait --output json)
+RESULT=$(ecp create-cluster acme-staging --wait --output json)
 PUBLIC_IP=$(echo $RESULT | jq -r .publicIp)
 ```
 
@@ -40,11 +40,11 @@ Provisioning tenant acme-staging...
   ✓ Signing key fetched from Secrets Manager
   ⠸ kubeadm init running... [3m 12s]
   ✓ kubeadm init completed
-  ✓ Registering cluster with eks-dx
+  ✓ Registering cluster with ecp
   ✓ Ready
 
 Tenant ready. Public IP: 54.12.34.56
-SSH key: aws secretsmanager get-secret-value --secret-id eks-dx/tenant/acme-staging/ssh-key
+SSH key: aws secretsmanager get-secret-value --secret-id ecp/tenant/acme-staging/ssh-key
 ```
 
 ### What happens automatically on first boot
@@ -54,9 +54,9 @@ The AMI's first-boot script runs as `ec2-user`:
 1. Runs `kubeadm init --service-account-issuer https://{publicIp}`
    — kubeadm generates its own SA signing key at `/etc/kubernetes/pki/sa.key`
 2. Derives JWKS from `/etc/kubernetes/pki/sa.pub`
-3. Calls `eks-dx create-cluster --oidc-mode self-managed {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json`
+3. Calls `ecp create-cluster --oidc-mode self-managed {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json`
    — authenticated via the instance profile IAM role, scoped to `POST /clusters/{tenantId}` only
-4. Installs `eks-dx-auth-proxy` and `eks-dx-pod-identity-webhook` via Helm (images pre-baked in AMI)
+4. Installs `ecp-auth-proxy` and `ecp-workload-identity-webhook` via Helm (images pre-baked in AMI)
 5. Updates DynamoDB state to `ready`
 
 No Secrets Manager signing key fetch — kubeadm owns the key entirely.
@@ -68,7 +68,7 @@ No Secrets Manager signing key fetch — kubeadm owns the key entirely.
 ```bash
 # Retrieve SSH key
 aws secretsmanager get-secret-value \
-  --secret-id eks-dx/tenant/acme-staging/ssh-key \
+  --secret-id ecp/tenant/acme-staging/ssh-key \
   --query SecretString --output text > acme-staging.pem
 chmod 600 acme-staging.pem
 
@@ -82,26 +82,26 @@ export KUBECONFIG=acme-staging.kubeconfig
 
 ---
 
-## 3. Create pod identity associations
+## 3. Create workload identitys
 
 First, prepare your IAM role (see [IAM Role Setup](iam/iam-role-setup.md) for full details):
 
 ```bash
-# Tag the role so EKS-DX can manage the trust policy automatically
-aws iam tag-role --role-name my-role --tags Key=eks-dx-managed,Value=true
+# Tag the role so Express Compute can manage the trust policy automatically
+aws iam tag-role --role-name my-role --tags Key=ecp-managed,Value=true
 ```
 
 Then create the association:
 
 ```bash
-eks-dx create-association \
+ecp create-association \
   --cluster-name acme-staging \
   --namespace my-app \
   --service-account my-sa \
   --role-arn arn:aws:iam::123456789012:role/my-role
 ```
 
-EKS-DX automatically configures the role's trust policy. No role naming constraints apply.
+Express Compute automatically configures the role's trust policy. No role naming constraints apply.
 
 ---
 
@@ -124,7 +124,7 @@ kubectl --kubeconfig acme-staging.kubeconfig logs aws-test -n my-app
 ## 5. Deprovision
 
 ```bash
-eks-dx delete-cluster acme-staging
+ecp delete-cluster acme-staging
 ```
 
 This terminates the EC2 instance, deletes both Secrets Manager secrets, removes the cluster
@@ -138,17 +138,17 @@ registration from DynamoDB, deletes the per-tenant IAM role, and removes the EC2
   any other cluster name (IAM resource ARN scoped to the exact path)
 - The SA signing key is generated by kubeadm and lives only on the EBS volume — **not backed up**
 - If the instance is terminated, the signing key is lost; re-provisioning generates a new key
-  and requires re-registering the cluster and re-creating all pod identity associations
+  and requires re-registering the cluster and re-creating all workload identitys
 
 ---
 
-## Differences from k3s and EKS-D-Xpress (full)
+## Differences from k3s and Express Compute (full)
 
-| | k3s | EKS-D-Xpress CE | EKS-D-Xpress (full) |
+| | k3s | Express Compute CE | Express Compute (full) |
 |---|---|---|---|
 | Cluster registration | Manual | Automatic (first-boot) | Automatic (first-boot) |
 | SA signing key | Generated by k3s | Generated by kubeadm | Pre-generated, stored in SM |
 | Key backup | None | None | Secrets Manager |
 | Re-provisioning | Manual re-register | New key, re-register | Same key, transparent |
 | In-cluster components | Manual Helm install | Pre-baked in AMI | Pre-baked in AMI |
-| Deprovisioning | Manual | `eks-dx delete-cluster` | `eks-dx delete-cluster` |
+| Deprovisioning | Manual | `ecp delete-cluster` | `ecp delete-cluster` |

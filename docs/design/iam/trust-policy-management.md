@@ -2,20 +2,20 @@
 
 ## Overview
 
-EKS-DX manages trust policy statements on target IAM roles automatically when pod identity associations are created or deleted. The mgmt-service Lambda appends/removes scoped trust statements, gated by the `eks-dx-managed=true` resource tag on the target role.
+Express Compute manages trust policy statements on target IAM roles automatically when workload identitys are created or deleted. The mgmt-service Lambda appends/removes scoped trust statements, gated by the `ecp-managed=true` resource tag on the target role.
 
 ## Architecture
 
 ```
-POST /clusters/{name}/pod-identity-associations
+POST /clusters/{name}/workload-identities
   │
   └─ mgmt-service Lambda
       ├── validateRoleExists()        — iam:GetRole
-      ├── isRoleTagged()              — iam:ListRoleTags (checks eks-dx-managed=true)
+      ├── isRoleTagged()              — iam:ListRoleTags (checks ecp-managed=true)
       ├── addTrustStatement()         — iam:UpdateAssumeRolePolicy (append-only)
       └── store in DynamoDB
 
-DELETE /clusters/{name}/pod-identity-associations/{id}
+DELETE /clusters/{name}/workload-identities/{id}
   │
   └─ mgmt-service Lambda
       ├── removeTrustStatement()      — iam:UpdateAssumeRolePolicy (targeted removal by Sid)
@@ -28,10 +28,10 @@ Each association produces one trust statement with a deterministic Sid:
 
 ```json
 {
-  "Sid": "AllowEksDX<cluster><namespace><sa>",
+  "Sid": "AllowECP<cluster><namespace><sa>",
   "Effect": "Allow",
   "Principal": {
-    "AWS": "arn:aws:iam::<control-plane-account>:role/EksDXCredentialBroker"
+    "AWS": "arn:aws:iam::<control-plane-account>:role/ECPCredentialBroker"
   },
   "Action": ["sts:AssumeRole", "sts:TagSession", "sts:SetSourceIdentity"],
   "Condition": {
@@ -46,13 +46,13 @@ Each association produces one trust statement with a deterministic Sid:
 
 Sid is sanitized to `[A-Za-z0-9]` only (IAM requirement).
 
-## Session Tags (Pod Identity-compatible)
+## Session Tags (Workload Identity-compatible)
 
-The credential-service passes 6 session tags identical to real EKS Pod Identity:
+The credential-service passes 6 session tags identical to real EKS Workload Identity:
 
 | Tag | Source |
 |-----|--------|
-| `eks-cluster-arn` | Synthetic: `arn:aws:eks-dx:<region>:<account>:cluster/<name>` |
+| `eks-cluster-arn` | Synthetic: `arn:aws:ecp:<region>:<account>:cluster/<name>` |
 | `eks-cluster-name` | Cluster name from association lookup |
 | `kubernetes-namespace` | JWT `kubernetes.io` claims |
 | `kubernetes-service-account` | JWT `kubernetes.io` claims |
@@ -63,7 +63,7 @@ All 6 are set as `TransitiveTagKeys` (propagate through role chains). `SourceIde
 
 ## IAM Permissions (CDK)
 
-### Credential-service (EksDXCredentialBroker role)
+### Credential-service (ECPCredentialBroker role)
 
 ```java
 .actions(List.of("sts:AssumeRole", "sts:TagSession", "sts:SetSourceIdentity"))
@@ -82,14 +82,14 @@ No resource constraint — scoping is via session tag conditions on the target r
 // Modify trust policies — only on tagged roles
 .actions(List.of("iam:UpdateAssumeRolePolicy"))
 .resources(List.of("arn:aws:iam::<account>:role/*"))
-.conditions(Map.of("StringEquals", Map.of("iam:ResourceTag/eks-dx-managed", "true")))
+.conditions(Map.of("StringEquals", Map.of("iam:ResourceTag/ecp-managed", "true")))
 ```
 
 ## Behavioral Modes
 
 | Role state | Behavior | API response field |
 |------------|----------|-------------------|
-| Tagged `eks-dx-managed=true` | Lambda auto-applies trust statement | `trustPolicyStatus: "APPLIED"` |
+| Tagged `ecp-managed=true` | Lambda auto-applies trust statement | `trustPolicyStatus: "APPLIED"` |
 | Statement already exists (same Sid) | No-op | `trustPolicyStatus: "ALREADY_PRESENT"` |
 | Not tagged / permission denied | Association created, trust not modified | `trustPolicyStatus: "MANUAL_ACTION_REQUIRED"` + `requiredTrustPolicyStatement` |
 
@@ -111,7 +111,7 @@ No resource constraint — scoping is via session tag conditions on the target r
 
 | File | Purpose |
 |------|---------|
-| `eks-dx-mgmt-service/.../service/TrustPolicyService.java` | Trust policy add/remove/validate |
-| `eks-dx-mgmt-service/.../service/DynamoDbAssociationService.java` | Integration into create/delete flows |
-| `eks-dx-credential-service/.../service/AwsCredentialService.java` | 6 session tags + SourceIdentity |
-| `infra/.../EksDXpressControlPlaneStack.java` | IAM grants for mgmt-service |
+| `ecp-mgmt-service/.../service/TrustPolicyService.java` | Trust policy add/remove/validate |
+| `ecp-mgmt-service/.../service/DynamoDbAssociationService.java` | Integration into create/delete flows |
+| `ecp-credential-service/.../service/AwsCredentialService.java` | 6 session tags + SourceIdentity |
+| `infra/.../ExpressComputeControlPlaneStack.java` | IAM grants for mgmt-service |

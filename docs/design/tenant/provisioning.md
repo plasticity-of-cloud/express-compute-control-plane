@@ -1,6 +1,6 @@
 # Tenant Provisioning Design
 
-Automated provisioning of a kubeadm-based Kubernetes cluster per tenant, integrated with EKS-DX Pod Identity.
+Automated provisioning of a kubeadm-based Kubernetes cluster per tenant, integrated with Express Compute Workload Identity.
 
 ## Overview
 
@@ -11,7 +11,7 @@ A Lambda function provisions a tenant cluster by:
 
 Initial infrastructure (Launch Template, IAM instance profile, VPC, Secrets Manager KMS key) is set up once via Terraform.
 
-Progress is streamed in real time via a dedicated Lambda Function URL (SSE, `RESPONSE_STREAM` mode). The `eks-dx` CLI and Amplify UI both consume this stream.
+Progress is streamed in real time via a dedicated Lambda Function URL (SSE, `RESPONSE_STREAM` mode). The `ecp` CLI and Amplify UI both consume this stream.
 
 ## Architecture
 
@@ -20,15 +20,15 @@ POST /tenants  (API Gateway → Lambda)
   Provisioning Lambda
     │
     ├─ 1. Generate RSA-2048 key pair (SA signing key)
-    │      └─ private key → Secrets Manager: eks-dx/tenant/{tenantId}/signing-key
+    │      └─ private key → Secrets Manager: ecp/tenant/{tenantId}/signing-key
     │
-    ├─ 2. ec2:CreateKeyPair("eks-dx-tenant-{tenantId}")
-    │      └─ private key PEM → Secrets Manager: eks-dx/tenant/{tenantId}/ssh-key
+    ├─ 2. ec2:CreateKeyPair("ecp-tenant-{tenantId}")
+    │      └─ private key PEM → Secrets Manager: ecp/tenant/{tenantId}/ssh-key
     │
-    ├─ 3. iam:CreateRole("eks-dx-tenant-{tenantId}-instance-role")
-    │      └─ inline policy: GetSecretValue on eks-dx/tenant/{tenantId}/*
+    ├─ 3. iam:CreateRole("ecp-tenant-{tenantId}-instance-role")
+    │      └─ inline policy: GetSecretValue on ecp/tenant/{tenantId}/*
     │                         execute-api:Invoke on POST /clusters (mgmt-service)
-    │                         dynamodb:UpdateItem on eks-dx-tenants table
+    │                         dynamodb:UpdateItem on ecp-tenants table
     │
     ├─ 4. ec2:RunInstances(LaunchTemplate, KeyName, IamInstanceProfile)
     │
@@ -47,7 +47,7 @@ POST /tenants  (API Gateway → Lambda)
     │      DynamoDB.update({ state: "kubeadm-done", progress: 70 })
     ├─ 5. Derive public JWKS from sa.pub
     │      DynamoDB.update({ state: "registering",  progress: 85 })
-    └─ 6. eks-dx register-cluster {tenantId} --issuer ... --jwks-file ...
+    └─ 6. ecp register-cluster {tenantId} --issuer ... --jwks-file ...
            DynamoDB.update({ state: "ready", progress: 100, publicIp })
 
 GET /tenants/{id}  (API Gateway → Lambda)
@@ -59,7 +59,7 @@ GET /tenants/{id}/stream  (Lambda Function URL — RESPONSE_STREAM)
 
 ## DynamoDB State Machine
 
-The `eks-dx-tenants` table tracks provisioning state. The EC2 instance writes progress directly via its instance profile role.
+The `ecp-tenants` table tracks provisioning state. The EC2 instance writes progress directly via its instance profile role.
 
 | `state` | `progress` | Description |
 |---|---|---|
@@ -69,7 +69,7 @@ The `eks-dx-tenants` table tracks provisioning state. The EC2 instance writes pr
 | `kubeadm-init` | 40 | `kubeadm init` running |
 | `kubeadm-done` | 70 | `kubeadm init` completed |
 | `registering` | 85 | Calling `POST /clusters` on mgmt-service |
-| `ready` | 100 | Cluster registered, pod identity live |
+| `ready` | 100 | Cluster registered, workload identity live |
 | `failed` | — | Error stored in `error` field |
 
 ### DynamoDB item schema
@@ -82,7 +82,7 @@ The `eks-dx-tenants` table tracks provisioning state. The EC2 instance writes pr
   "phase":           "kubeadm init running",
   "progress":        40,
   "publicIp":        "54.12.34.56",
-  "sshKeySecretArn": "arn:aws:secretsmanager:...:secret:eks-dx/tenant/acme-staging/ssh-key",
+  "sshKeySecretArn": "arn:aws:secretsmanager:...:secret:ecp/tenant/acme-staging/ssh-key",
   "updatedAt":       "2026-05-21T13:00:00Z",
   "error":           null
 }
@@ -148,7 +148,7 @@ TenantStreamFunction:
       InvokeMode: RESPONSE_STREAM
     Policies:
       - DynamoDBReadPolicy:
-          TableName: !Ref EksDxTenantsTable
+          TableName: !Ref EcpTenantsTable
 ```
 
 ## Cost
@@ -164,12 +164,12 @@ The streaming Lambda runs as a GraalVM native image (`provided.al2023`), which u
 
 Free tier: 400,000 GB-seconds/month, 1M requests/month. At 128MB × 180s = 22.5 GB-seconds per invocation, the free tier covers ~17,777 provisions/month. CI/CD workloads will not exit the free tier.
 
-## CLI Integration (`eks-dx create-tenant --wait`)
+## CLI Integration (`ecp create-tenant --wait`)
 
-The `eks-dx` CLI (PicoCLI) connects to the SSE stream endpoint and renders progress in the terminal.
+The `ecp` CLI (PicoCLI) connects to the SSE stream endpoint and renders progress in the terminal.
 
 ```
-$ eks-dx create-tenant acme-staging --wait
+$ ecp create-tenant acme-staging --wait
 
 Provisioning tenant acme-staging...
   ✓ EC2 instance launched (i-0abc1234567890)
@@ -180,7 +180,7 @@ Provisioning tenant acme-staging...
   ○ Ready
 
 Tenant ready. Public IP: 54.12.34.56
-SSH key: aws secretsmanager get-secret-value --secret-id eks-dx/tenant/acme-staging/ssh-key
+SSH key: aws secretsmanager get-secret-value --secret-id ecp/tenant/acme-staging/ssh-key
 ```
 
 With `--output json`, the spinner is suppressed and the final state is printed as JSON on completion — suitable for CI/CD script consumption.
@@ -219,7 +219,7 @@ public class CreateTenantCommand implements Runnable {
 
 ## CI/CD Integration
 
-CI/CD pipelines use `eks-dx create-tenant --wait --output json`. The CLI handles all polling internally — no custom loop needed in pipeline YAML.
+CI/CD pipelines use `ecp create-tenant --wait --output json`. The CLI handles all polling internally — no custom loop needed in pipeline YAML.
 
 ```yaml
 # GitHub Actions
@@ -230,7 +230,7 @@ CI/CD pipelines use `eks-dx create-tenant --wait --output json`. The CLI handles
 
 - name: Provision tenant
   run: |
-    RESULT=$(eks-dx create-tenant acme-${{ github.run_id }} --wait --output json)
+    RESULT=$(ecp create-tenant acme-${{ github.run_id }} --wait --output json)
     echo "PUBLIC_IP=$(echo $RESULT | jq -r .publicIp)" >> $GITHUB_ENV
 ```
 
@@ -291,7 +291,7 @@ kubeadm expects the SA signing key at `/etc/kubernetes/pki/sa.key` (private) and
 ```bash
 # user data excerpt
 SECRET=$(aws secretsmanager get-secret-value \
-  --secret-id eks-dx/tenant/${TENANT_ID}/signing-key \
+  --secret-id ecp/tenant/${TENANT_ID}/signing-key \
   --query SecretString --output text)
 
 echo "$SECRET" > /etc/kubernetes/pki/sa.key
@@ -306,17 +306,17 @@ kubeadm init \
 
 The instance calls `POST /clusters` on mgmt-service using SigV4 signed by the instance profile. The instance profile role has `execute-api:Invoke` scoped to the registration endpoint only. No shared secret or bootstrap token is needed.
 
-In practice, use the `eks-dx` CLI (already handles SigV4) from the instance:
+In practice, use the `ecp` CLI (already handles SigV4) from the instance:
 
 ```bash
-eks-dx register-cluster ${TENANT_ID} \
+ecp register-cluster ${TENANT_ID} \
   --issuer "https://${PUBLIC_IP}" \
   --jwks-file /tmp/jwks.json
 ```
 
 ### Instance progress writes directly to DynamoDB
 
-The EC2 instance writes progress directly to the `eks-dx-tenants` DynamoDB table via its instance profile role (`dynamodb:UpdateItem` scoped to the tenant's own item). This is simpler and more reliable than a callback to the provisioning Lambda — no HTTP call, no retry logic, no additional Lambda invocation.
+The EC2 instance writes progress directly to the `ecp-tenants` DynamoDB table via its instance profile role (`dynamodb:UpdateItem` scoped to the tenant's own item). This is simpler and more reliable than a callback to the provisioning Lambda — no HTTP call, no retry logic, no additional Lambda invocation.
 
 ### Async API (mandatory — API Gateway 29s timeout)
 
@@ -335,13 +335,13 @@ A new IAM role is created per tenant with least-privilege inline policy:
 [
   { "Effect": "Allow",
     "Action": "secretsmanager:GetSecretValue",
-    "Resource": "arn:aws:secretsmanager:*:*:secret:eks-dx/tenant/{tenantId}/*" },
+    "Resource": "arn:aws:secretsmanager:*:*:secret:ecp/tenant/{tenantId}/*" },
   { "Effect": "Allow",
     "Action": "execute-api:Invoke",
     "Resource": "arn:aws:execute-api:{region}:{accountId}:{apiId}/*/POST/clusters" },
   { "Effect": "Allow",
     "Action": "dynamodb:UpdateItem",
-    "Resource": "arn:aws:dynamodb:{region}:{accountId}:table/eks-dx-tenants",
+    "Resource": "arn:aws:dynamodb:{region}:{accountId}:table/ecp-tenants",
     "Condition": { "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["{tenantId}"] } } }
 ]
 ```
@@ -352,8 +352,8 @@ The role is deleted on tenant deprovisioning.
 
 | Secret name | Content | Lifecycle |
 |---|---|---|
-| `eks-dx/tenant/{id}/signing-key` | RSA-2048 private key PEM (SA signing) | Persist for cluster lifetime |
-| `eks-dx/tenant/{id}/ssh-key` | EC2 key pair private key PEM | Persist for cluster lifetime |
+| `ecp/tenant/{id}/signing-key` | RSA-2048 private key PEM (SA signing) | Persist for cluster lifetime |
+| `ecp/tenant/{id}/ssh-key` | EC2 key pair private key PEM | Persist for cluster lifetime |
 
 ## Deprovisioning
 
@@ -361,9 +361,9 @@ The role is deleted on tenant deprovisioning.
 DELETE /tenants/{id}
   1. ec2:TerminateInstances
   2. DELETE /clusters/{tenantId}  (mgmt-service — removes DynamoDB entry)
-  3. secretsmanager:DeleteSecret eks-dx/tenant/{id}/signing-key
-  4. secretsmanager:DeleteSecret eks-dx/tenant/{id}/ssh-key
-  5. ec2:DeleteKeyPair eks-dx-tenant-{id}
-  6. iam:DeleteRolePolicy + iam:DeleteRole eks-dx-tenant-{id}-instance-role
+  3. secretsmanager:DeleteSecret ecp/tenant/{id}/signing-key
+  4. secretsmanager:DeleteSecret ecp/tenant/{id}/ssh-key
+  5. ec2:DeleteKeyPair ecp-tenant-{id}
+  6. iam:DeleteRolePolicy + iam:DeleteRole ecp-tenant-{id}-instance-role
   7. DynamoDB.delete({ tenantId })
 ```

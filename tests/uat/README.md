@@ -1,6 +1,6 @@
-# EKS-DX CLI UAT
+# Express Compute CLI UAT
 
-Robot Framework acceptance tests for every `eks-dx` CLI command.
+Robot Framework acceptance tests for every `ecp` CLI command.
 
 ## Quick start
 
@@ -10,7 +10,7 @@ pip3 install -r tests/uat/requirements.txt
 ./tests/uat/run-uat.sh
 
 # Run a single suite
-robot --variable CLI_JAR:$(ls eks-dx-cli/target/*-runner.jar) \
+robot --variable CLI_JAR:$(ls ecp-cli/target/*-runner.jar) \
   tests/uat/suites/04_get_cluster_access.robot
 
 # Run live tests against a deployed stack

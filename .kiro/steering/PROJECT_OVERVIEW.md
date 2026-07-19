@@ -1,15 +1,15 @@
-# EKS-DX Control Plane
+# Express Compute Control Plane
 
 ## Project Overview
 
-A serverless service that brings EKS Pod Identity (`AssumeRoleForPodIdentity`) to k3s, microk8s, and EKS-D clusters via a centralized Lambda backend with DynamoDB storage.
+A serverless service that brings EKS Workload Identity (`AssumeRoleForPodIdentity`) to k3s, microk8s, and EKS-D clusters via a centralized Lambda backend with DynamoDB storage.
 
 ## Architecture
 
 ### Credential Exchange Flow
 
 ```
-Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
+Pod → Workload Identity Agent → ecp-auth-proxy (in-cluster)
   │
   ├─ 1. TokenReview (fast-fail — K8s API validates JWT signature + audience)
   │
@@ -25,17 +25,17 @@ Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
 
 | Component | Purpose |
 |-----------|---------|
-| `EksAuthResource` (Lambda) | `POST /clusters/{name}/assets` — JWKS validation, association lookup, STS AssumeRole |
+| `CredentialExchangeResource` (Lambda) | `POST /clusters/{name}/assets` — JWKS validation, association lookup, STS AssumeRole |
 | `ClusterResource` (Lambda) | Cluster registration CRUD (DynamoDB) |
 | `AssociationResource` (Lambda) | Pod identity association CRUD (DynamoDB) |
-| `EksAuthAgentResource` (Proxy) | In-cluster fast-fail TokenReview + Lambda forwarding |
+| `AuthProxyResource` (Proxy) | In-cluster fast-fail TokenReview + Lambda forwarding |
 | `TokenValidationService` (Proxy) | Kubernetes TokenReview |
 | `LambdaForwardingService` (Proxy) | JDK HttpClient → Lambda API Gateway |
 | `JwksTokenValidationService` (Lambda) | jose4j JWT validation with DynamoDB-cached JWKS |
 | `DynamoDbClusterService` (Lambda) | Cluster CRUD (DynamoDB) |
 | `DynamoDbAssociationService` (Lambda) | Association CRUD (DynamoDB) |
 | `AwsCredentialService` (Lambda) | STS AssumeRole with session tags |
-| `PodIdentityMutator` (Webhook) | Injects env vars + projected token volume into pods |
+| `WorkloadIdentityMutator` (Webhook) | Injects env vars + projected token volume into pods |
 
 ### Technology Stack
 
@@ -72,7 +72,7 @@ mvn test -Dintegration.dynamodb=true
 ./delete_tenant.sh <tenant-id>   # Deprovision and wait for completion
 ```
 
-SSH key is stored in Secrets Manager at `eks-d-xpress/tenant/<id>/ssh-key` and saved locally to `~/.eks-d-xpress/tenants/<region>/<id>.pem` on successful provisioning.
+SSH key is stored in Secrets Manager at `express-compute/tenant/<id>/ssh-key` and saved locally to `~/.express-compute/tenants/<region>/<id>.pem` on successful provisioning.
 
 ## Configuration
 
@@ -80,29 +80,29 @@ SSH key is stored in Secrets Manager at `eks-d-xpress/tenant/<id>/ssh-key` and s
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `eks-dx.clusters-table` | `eks-dx-clusters` | DynamoDB table for cluster registrations |
-| `eks-dx.associations-table` | `eks-dx-associations` | DynamoDB table for pod identity associations |
+| `ecp.clusters-table` | `ecp-clusters` | DynamoDB table for cluster registrations |
+| `ecp.associations-table` | `ecp-workload-identities` | DynamoDB table for workload identitys |
 | `aws.sts.session-duration` | `PT1H` | STS session duration |
 
-### eks-dx-auth-proxy
+### ecp-auth-proxy
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `eks-dx.endpoint` | `https://eks-dx.codriverlabs.ai` | EKS-DX Lambda API Gateway endpoint |
+| `ecp.endpoint` | `https://ecp.codriverlabs.ai` | Express Compute Lambda API Gateway endpoint |
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `EKS_DX_ENDPOINT` | Lambda API Gateway URL (for eks-dx-auth-proxy) |
-| `EKS_DX_CLUSTERS_TABLE` | DynamoDB clusters table name override |
-| `EKS_DX_ASSOCIATIONS_TABLE` | DynamoDB associations table name override |
+| `ECP_ENDPOINT` | Lambda API Gateway URL (for ecp-auth-proxy) |
+| `ECP_CLUSTERS_TABLE` | DynamoDB clusters table name override |
+| `ECP_ASSOCIATIONS_TABLE` | DynamoDB associations table name override |
 | `AWS_REGION` | AWS region (default: `us-east-1`) |
 
 ## CI/CD Integration
 
 ```bash
-export AWS_CONTAINER_CREDENTIALS_FULL_URI=http://eks-dx-auth-proxy:8080/
+export AWS_CONTAINER_CREDENTIALS_FULL_URI=http://ecp-auth-proxy:8080/
 export AWS_CONTAINER_AUTHORIZATION_TOKEN="Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
 
 # AWS SDK now uses the proxy automatically

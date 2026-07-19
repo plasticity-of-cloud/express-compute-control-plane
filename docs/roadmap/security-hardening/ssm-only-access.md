@@ -75,7 +75,7 @@ Verify the tenant IAM role includes:
 
 ### CLI Output on `create tenant` / `resume tenant`
 
-#### Kubeconfig (written to `~/.eks-dx/tenants/{id}/kubeconfig`)
+#### Kubeconfig (written to `~/.ecp/tenants/{id}/kubeconfig`)
 
 ```yaml
 apiVersion: v1
@@ -84,20 +84,20 @@ clusters:
 - cluster:
     server: https://127.0.0.1:6443
     certificate-authority-data: <tenant CA, base64>
-  name: eks-dx-{tenant-id}
+  name: ecp-{tenant-id}
 contexts:
 - context:
-    cluster: eks-dx-{tenant-id}
-    user: eks-dx-{tenant-id}-admin
-  name: eks-dx-{tenant-id}
-current-context: eks-dx-{tenant-id}
+    cluster: ecp-{tenant-id}
+    user: ecp-{tenant-id}-admin
+  name: ecp-{tenant-id}
+current-context: ecp-{tenant-id}
 users:
 - user:
     client-certificate-data: <admin cert, base64>
     client-key-data: <admin key, base64>
 ```
 
-#### Connection helper (written to `~/.eks-dx/tenants/{id}/connect.sh`)
+#### Connection helper (written to `~/.ecp/tenants/{id}/connect.sh`)
 
 ```bash
 #!/usr/bin/env bash
@@ -113,25 +113,25 @@ aws ssm start-session \
 #### CLI UX
 
 ```
-$ eks-dx tenant create --arch arm64 --k8s-version 1.31
+$ ecp tenant create --arch arm64 --k8s-version 1.31
 ✓ Provisioning complete (62s)
 
   Instance:  i-0abc123def456
   Region:    us-east-1
 
   kubectl access (SSM port-forward):
-    Terminal 1:  eks-dx connect my-tenant
-    Terminal 2:  export KUBECONFIG=~/.eks-dx/tenants/my-tenant/kubeconfig
+    Terminal 1:  ecp connect my-tenant
+    Terminal 2:  export KUBECONFIG=~/.ecp/tenants/my-tenant/kubeconfig
                  kubectl get nodes
 
   SSH access:
-    eks-dx ssh my-tenant
+    ecp ssh my-tenant
     # or directly:
     aws ssm start-session --target i-0abc123def456
 ```
 
-The `eks-dx connect` command wraps `aws ssm start-session` with the correct parameters.
-The `eks-dx ssh` command wraps `aws ssm start-session --document-name AWS-StartSSHSession`.
+The `ecp connect` command wraps `aws ssm start-session` with the correct parameters.
+The `ecp ssh` command wraps `aws ssm start-session --document-name AWS-StartSSHSession`.
 
 ### What Gets Removed
 
@@ -148,8 +148,8 @@ The `eks-dx ssh` command wraps `aws ssm start-session --document-name AWS-StartS
 
 | Component | Purpose |
 |-----------|---------|
-| `eks-dx connect <tenant>` CLI command | Wraps SSM port-forward to 6443 |
-| `eks-dx ssh <tenant>` CLI command | Wraps SSM session |
+| `ecp connect <tenant>` CLI command | Wraps SSM port-forward to 6443 |
+| `ecp ssh <tenant>` CLI command | Wraps SSM session |
 | Kubeconfig generation in tenant-service | Returns kubeconfig pointing at localhost:6443 |
 | Admin client cert in Secrets Manager | For kubeconfig (replaces SSH key as the "access secret") |
 | SSM managed policy on tenant instance role | Ensure SSM connectivity |
@@ -169,13 +169,13 @@ Developers/CI need permission to start SSM sessions to tenant instances:
   ],
   "Condition": {
     "StringLike": {
-      "ssm:resourceTag/eks-dx-tenant": "*"
+      "ssm:resourceTag/ecp-tenant": "*"
     }
   }
 }
 ```
 
-This scopes SSM access to only eks-dx tenant instances via resource tags.
+This scopes SSM access to only ecp tenant instances via resource tags.
 
 ## Benefits
 
@@ -192,7 +192,7 @@ This scopes SSM access to only eks-dx tenant instances via resource tags.
 
 ### Phase 1 — Add SSM commands to CLI (non-breaking)
 
-- Add `eks-dx connect` and `eks-dx ssh` commands
+- Add `ecp connect` and `ecp ssh` commands
 - Generate kubeconfig on provisioning (store in Secrets Manager)
 - Keep existing SG rules and SSH key flow
 - Document SSM as the recommended access method
@@ -229,4 +229,4 @@ SSM port-forward requires the instance to be running. The Lambda proxy handles w
 | SSM Agent not running | Health check during provisioning; user-data ensures agent starts |
 | Developer lacks SSM IAM permissions | CLI validates permissions upfront, provides clear error |
 | Latency of SSM tunnel | ~10-20ms overhead — imperceptible for kubectl |
-| SSM service outage | Rare; fallback: temporarily add SG rule via `eks-dx emergency-access` |
+| SSM service outage | Rare; fallback: temporarily add SG rule via `ecp emergency-access` |

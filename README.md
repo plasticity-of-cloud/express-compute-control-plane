@@ -1,11 +1,11 @@
-# EKS-DX Control Plane
+# Express Compute Control Plane
 
-A serverless service that brings EKS Pod Identity to non-EKS Kubernetes clusters (EKS-D via kubeadm). Three Lambda functions handle credential exchange, cluster management, and tenant provisioning, backed by DynamoDB and deployed via CDK.
+A serverless service that brings EKS Workload Identity to non-EKS Kubernetes clusters (EKS-D via kubeadm). Three Lambda functions handle credential exchange, cluster management, and tenant provisioning, backed by DynamoDB and deployed via CDK.
 
 ## How It Works
 
 ```
-Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
+Pod → Workload Identity Agent → ecp-auth-proxy (in-cluster)
   │
   ├─ 1. TokenReview (fast-fail — K8s API validates JWT signature + audience)
   │
@@ -17,7 +17,7 @@ Pod → Pod Identity Agent → eks-dx-auth-proxy (in-cluster)
        └─ 6. Return temporary AWS credentials
 ```
 
-Clusters and pod identity associations are registered via the `eks-dx` CLI. Tenant infrastructure (EC2 instances running EKS-D) is provisioned on demand.
+Clusters and workload identitys are registered via the `ecp` CLI. Tenant infrastructure (EC2 instances running EKS-D) is provisioned on demand.
 
 ## Quick Start
 
@@ -37,7 +37,7 @@ Clusters and pod identity associations are registered via the `eks-dx` CLI. Tena
 ### Deploy
 
 ```bash
-cd infra && cdk deploy EksDXpressControlPlaneStack
+cd infra && cdk deploy ExpressComputeControlPlaneStack
 ```
 
 Requires SSM parameters written by the infrastructure stack first (see `docs/design/ssm-parameter-contract.md`).
@@ -64,7 +64,7 @@ mvn test -Dintegration.dynamodb=true
 │ AssumeRole   │                  │ • TenantEc2Service            │
 │              │                  │ • TenantDlmService            │
 ├──────────────┴──────────────────┴───────────────────────────────┤
-│ DynamoDB: eks-dx-clusters | eks-dx-associations | eks-dx-tenants │
+│ DynamoDB: ecp-clusters | ecp-workload-identities | ecp-tenants │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,9 +85,9 @@ DELETE /clusters/{name}
 
 ### Association Management (IAM SigV4)
 ```bash
-POST   /clusters/{name}/pod-identity-associations
-GET    /clusters/{name}/pod-identity-associations
-DELETE /clusters/{name}/pod-identity-associations/{id}
+POST   /clusters/{name}/workload-identities
+GET    /clusters/{name}/workload-identities
+DELETE /clusters/{name}/workload-identities/{id}
 ```
 
 ### Tenant Provisioning (IAM SigV4)
@@ -101,19 +101,19 @@ GET    /tenants/{id}/stream    # SSE progress (Function URL)
 ## Module Structure
 
 ```
-├── eks-dx-credential-service/   # Lambda: credential exchange (hot path)
-├── eks-dx-mgmt-service/         # Lambda: cluster/association CRUD
-├── eks-dx-tenant-service/       # Lambda: tenant provisioning + lifecycle
+├── ecp-credential-service/   # Lambda: credential exchange (hot path)
+├── ecp-mgmt-service/         # Lambda: cluster/association CRUD
+├── ecp-tenant-service/       # Lambda: tenant provisioning + lifecycle
 │   └── service/
 │       ├── TenantProvisioningService   # Orchestrator
 │       ├── TenantNetworkService        # Subnets, SG, route tables
 │       ├── TenantIamService            # Role, policies, instance profile
 │       ├── TenantEc2Service            # Instance launch, user data, EIP
 │       └── TenantDlmService            # Etcd backup policy
-├── eks-dx-auth-proxy/           # In-cluster proxy (TokenReview + forwarding)
-├── eks-dx-pod-identity-webhook/ # Admission webhook (env + volume injection)
-├── eks-dx-cli/                  # Native CLI (output: eks-dx binary)
-├── eks-dx-model/                # Shared TokenClaims record
+├── ecp-auth-proxy/           # In-cluster proxy (TokenReview + forwarding)
+├── ecp-workload-identity-webhook/ # Admission webhook (env + volume injection)
+├── ecp-cli/                  # Native CLI (output: ecp binary)
+├── ecp-model/                # Shared TokenClaims record
 └── infra/                       # CDK stack (Java, primary deployment path)
 ```
 
@@ -124,11 +124,11 @@ GET    /tenants/{id}/stream    # SSE progress (Function URL)
 Infrastructure writes, Lambda reads at runtime:
 
 ```
-/eks-d-xpress/infra/launch-template/{arch}/{spot|ondemand}  # Launch template IDs
-/eks-d-xpress/infra/ami/{arch}/{k8s-version}                # AMI IDs (region-specific)
-/eks-d-xpress/infra/network/vpc-id                          # VPC
-/eks-d-xpress/control-plane/api/endpoint                    # API Gateway URL
-/eks-d-xpress/control-plane/quota/max-tenants-per-caller    # Quota (default: 1)
+/express-compute/infra/launch-template/{arch}/{spot|ondemand}  # Launch template IDs
+/express-compute/infra/ami/{arch}/{k8s-version}                # AMI IDs (region-specific)
+/express-compute/infra/network/vpc-id                          # VPC
+/express-compute/control-plane/api/endpoint                    # API Gateway URL
+/express-compute/control-plane/quota/max-tenants-per-caller    # Quota (default: 1)
 ```
 
 See `docs/design/ssm-parameter-contract.md` for full details.
@@ -137,15 +137,15 @@ See `docs/design/ssm-parameter-contract.md` for full details.
 
 | Variable | Service | Description |
 |----------|---------|-------------|
-| `EKS_DX_CLUSTERS_TABLE` | credential, mgmt | DynamoDB clusters table |
-| `EKS_DX_ASSOCIATIONS_TABLE` | credential, mgmt | DynamoDB associations table |
-| `EKS_DX_TENANTS_TABLE` | tenant | DynamoDB tenants table |
-| `EKS_DX_LT_ARM64_ONDEMAND` | tenant | Launch template ID |
-| `EKS_DX_LT_ARM64_SPOT` | tenant | Launch template ID |
-| `EKS_DX_LT_X86_ONDEMAND` | tenant | Launch template ID |
-| `EKS_DX_LT_X86_SPOT` | tenant | Launch template ID |
-| `EKS_DX_VPC_ID` | tenant | VPC for tenant resources |
-| `EKS_DX_ENDPOINT` | auth-proxy, tenant | API Gateway URL |
+| `ECP_CLUSTERS_TABLE` | credential, mgmt | DynamoDB clusters table |
+| `ECP_ASSOCIATIONS_TABLE` | credential, mgmt | DynamoDB associations table |
+| `ECP_TENANTS_TABLE` | tenant | DynamoDB tenants table |
+| `ECP_LT_ARM64_ONDEMAND` | tenant | Launch template ID |
+| `ECP_LT_ARM64_SPOT` | tenant | Launch template ID |
+| `ECP_LT_X86_ONDEMAND` | tenant | Launch template ID |
+| `ECP_LT_X86_SPOT` | tenant | Launch template ID |
+| `ECP_VPC_ID` | tenant | VPC for tenant resources |
+| `ECP_ENDPOINT` | auth-proxy, tenant | API Gateway URL |
 
 ## Documentation
 

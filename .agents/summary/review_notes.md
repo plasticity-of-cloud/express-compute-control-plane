@@ -6,7 +6,7 @@
 ✅ **API paths** — interfaces.md matches the code overview (ClusterResource, AssociationResource, TenantResource)
 ✅ **DynamoDB key design** — data_models.md aligns with architecture.md's O(1) lookup description
 ✅ **Authentication model** — Consistent between architecture.md and interfaces.md
-✅ **Naming conventions** — TenantNaming prefix `eks-dx-tenant-` documented consistently
+✅ **Naming conventions** — TenantNaming prefix `ecp-tenant-` documented consistently
 ✅ **Technology versions** — Java 25, Quarkus 3.37.1, AWS SDK 2.46.21 consistent with pom.xml
 
 ## Completeness Assessment
@@ -23,7 +23,7 @@
 
 | Gap | Location | Impact |
 |-----|----------|--------|
-| CDK stack internals | `EksDXpressControlPlaneStack` (594 LOC) | High — largest single file, undocumented internals |
+| CDK stack internals | `ExpressComputeControlPlaneStack` (594 LOC) | High — largest single file, undocumented internals |
 | Release workflow details | `.github/workflows/release.yml` | Medium — multi-arch build + GHCR push logic |
 | Helm chart values/configuration | auth-proxy, webhook, karpenter charts | Medium — deployment customization |
 | Trust policy management logic | `TrustPolicyService` (184 LOC) | Medium — complex IAM trust policy manipulation |
@@ -37,7 +37,7 @@
 
 ## Recommendations
 
-1. **CDK stack documentation**: The `EksDXpressControlPlaneStack.java` at 594 LOC is the most complex infrastructure file. Consider adding inline architecture comments or a dedicated CDK design doc.
+1. **CDK stack documentation**: The `ExpressComputeControlPlaneStack.java` at 594 LOC is the most complex infrastructure file. Consider adding inline architecture comments or a dedicated CDK design doc.
 
 2. **Helm values reference**: Document configurable Helm values for each in-cluster component to aid deployment customization.
 

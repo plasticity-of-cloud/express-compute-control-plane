@@ -47,7 +47,7 @@
 
 | Dependency | Usage |
 |-----------|-------|
-| `info.picocli:picocli` | Command-line parsing (eks-dx CLI) |
+| `info.picocli:picocli` | Command-line parsing (ecp CLI) |
 
 ## Build & Native
 

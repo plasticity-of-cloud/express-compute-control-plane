@@ -2,15 +2,15 @@
 
 ## System Overview
 
-EKS-DX brings EKS Pod Identity (`AssumeRoleForPodIdentity`) to non-EKS Kubernetes clusters (EKS-D, k3s, microk8s) through a centralized serverless backend with DynamoDB storage and KMS-backed PKI.
+Express Compute brings EKS Workload Identity (`AssumeRoleForPodIdentity`) to non-EKS Kubernetes clusters (EKS-D, k3s, microk8s) through a centralized serverless backend with DynamoDB storage and KMS-backed PKI.
 
 ```mermaid
 graph TB
     subgraph "Tenant Cluster"
         Pod[Pod with SA Token]
-        Agent[Pod Identity Agent]
-        Proxy[eks-dx-auth-proxy]
-        Webhook[Pod Identity Webhook]
+        Agent[Workload Identity Agent]
+        Proxy[ecp-auth-proxy]
+        Webhook[Workload Identity Webhook]
         Karpenter[Karpenter Support]
     end
 
@@ -56,7 +56,7 @@ graph LR
         F[karpenter-support]
     end
     subgraph "Client"
-        G[eks-dx CLI]
+        G[ecp CLI]
     end
 
     G -->|SigV4| B
@@ -92,5 +92,5 @@ graph LR
 
 - **SSM Parameter Contract**: Infrastructure (CDK) writes parameters, Lambda reads at runtime. Decouples deployment timing.
 - **Shared VPC**: All tenants share a VPC; each gets a dedicated subnet + security group.
-- **Naming conventions**: Shared infra uses `eks-d-xpress-` prefix; per-tenant uses `eks-dx-tenant-` prefix (via `TenantNaming` class).
-- **Platform tagging**: Shared resources tagged `Platform=eks-d-xpress`.
+- **Naming conventions**: Shared infra uses `express-compute-` prefix; per-tenant uses `ecp-tenant-` prefix (via `TenantNaming` class).
+- **Platform tagging**: Shared resources tagged `Platform=express-compute`.

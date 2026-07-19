@@ -1,6 +1,6 @@
-# EKS-DX TODO
+# Express Compute TODO
 
-## eks-dx-lambda (Lambda service)
+## ecp-lambda (Lambda service)
 
 ### Service implementations
 - [x] `DynamoDbClusterService` — registerCluster, describeCluster, listClusters, updateJwks, deregisterCluster
@@ -11,7 +11,7 @@
 ### Resource implementations
 - [x] `ClusterResource` — wire up DynamoDbClusterService, request/response DTOs
 - [x] `AssociationResource` — wire up DynamoDbAssociationService, request/response DTOs, generate associationId
-- [x] `EksAuthResource` — credential exchange endpoint
+- [x] `CredentialExchangeResource` — credential exchange endpoint
 
 ### Auth
 - [x] `WebhookAuthFilter` — SA token audience check
@@ -23,28 +23,28 @@
 - [x] CDK synth validation
 
 ### Deployment
-- [x] CDK deploy (`cdk deploy EksDXpressControlPlaneStack`)
+- [x] CDK deploy (`cdk deploy ExpressComputeControlPlaneStack`)
 - [ ] SnapStart verification (cold start benchmarks)
 
-## eks-dx-cli (Native binary CLI)
+## ecp-cli (Native binary CLI)
 
 - [x] All 9 commands (cluster + association CRUD)
-- [x] `eks-dx configure` command
+- [x] `ecp configure` command
 - [x] IAM SigV4 signing (JDK crypto, no AWS SDK)
 - [x] Native binary build config
 
-## eks-dx-auth-proxy (Simplified in-cluster proxy)
+## ecp-auth-proxy (Simplified in-cluster proxy)
 
 - [x] TokenReview fast-fail + Lambda forwarding (18 tests)
 
-## eks-dx-pod-identity-webhook
+## ecp-workload-identity-webhook
 
 - [x] Lambda-based association lookup (10 tests)
 
 ## Infrastructure
 
 - [x] CDK stack (REST API v1, IAM auth, SnapStart, PITR, alarms, trust policy management)
-- [x] Pod Identity-compatible broker (EksDXCredentialBroker, 6 session tags, SourceIdentity)
+- [x] Workload Identity-compatible broker (ECPCredentialBroker, 6 session tags, SourceIdentity)
 
 ## Documentation
 

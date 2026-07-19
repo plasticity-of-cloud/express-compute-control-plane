@@ -3,7 +3,7 @@
 ## Problem
 
 When the provisioner Lambda launches an EC2 instance, it gives that instance an IAM role
-so it can call `POST /clusters` to register itself with eks-dx. Without further scoping,
+so it can call `POST /clusters` to register itself with ecp. Without further scoping,
 that role could register **any** cluster name — including overwriting an existing tenant's
 JWKS or impersonating another cluster.
 
@@ -31,7 +31,7 @@ other path.
   {
     "Effect": "Allow",
     "Action": "secretsmanager:GetSecretValue",
-    "Resource": "arn:aws:secretsmanager:{region}:{accountId}:secret:eks-dx/tenant/{tenantId}/*"
+    "Resource": "arn:aws:secretsmanager:{region}:{accountId}:secret:ecp/tenant/{tenantId}/*"
   },
   {
     "Effect": "Allow",
@@ -41,7 +41,7 @@ other path.
   {
     "Effect": "Allow",
     "Action": "dynamodb:UpdateItem",
-    "Resource": "arn:aws:dynamodb:{region}:{accountId}:table/eks-dx-tenants",
+    "Resource": "arn:aws:dynamodb:{region}:{accountId}:table/ecp-tenants",
     "Condition": {
       "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["{tenantId}"] }
     }
@@ -53,7 +53,7 @@ Each permission is scoped to the tenant's own resources:
 
 | Permission | Scope |
 |---|---|
-| `secretsmanager:GetSecretValue` | Only secrets under `eks-dx/tenant/{tenantId}/` |
+| `secretsmanager:GetSecretValue` | Only secrets under `ecp/tenant/{tenantId}/` |
 | `execute-api:Invoke` | Only `POST /clusters/{tenantId}` — cannot register any other name |
 | `dynamodb:UpdateItem` | Only the tenant's own DynamoDB item (leading key condition) |
 
@@ -67,17 +67,17 @@ constraint is enforced by AWS IAM before the request reaches the Lambda.
 ## First-boot registration flow
 
 ```
-EC2 instance boots (IAM role: eks-dx-tenant-{tenantId}-instance-role)
+EC2 instance boots (IAM role: ecp-tenant-{tenantId}-instance-role)
   ↓
-1. aws secretsmanager get-secret-value eks-dx/tenant/{tenantId}/signing-key
+1. aws secretsmanager get-secret-value ecp/tenant/{tenantId}/signing-key
    → writes /etc/kubernetes/pki/sa.key + sa.pub
 2. kubeadm init --service-account-signing-key-file sa.key \
                 --service-account-issuer https://{publicIp}
 3. Derive JWKS from sa.pub
-4. eks-dx register-cluster {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json
+4. ecp register-cluster {tenantId} --issuer https://{publicIp} --jwks-file /tmp/jwks.json
    → POST /clusters/{tenantId}  (SigV4, signed by instance profile)
    → IAM allows this call only for this tenantId
-5. Install eks-dx-auth-proxy + webhook (pre-baked in AMI)
+5. Install ecp-auth-proxy + webhook (pre-baked in AMI)
 6. dynamodb:UpdateItem → state: ready
 ```
 

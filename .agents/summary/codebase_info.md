@@ -2,7 +2,7 @@
 
 ## Project Identity
 
-- **Name**: EKS-DX Control Plane
+- **Name**: Express Compute Control Plane
 - **Group ID**: `ai.codriverlabs`
 - **Artifact ID**: `aws-eks-auth-parent`
 - **Version**: `1.0.0-SNAPSHOT`
@@ -27,14 +27,14 @@
 
 | Module | Type | Runtime | Description |
 |--------|------|---------|-------------|
-| `eks-dx-model` | Library | — | Shared: `TokenClaims`, `CallerIdentity` |
-| `eks-dx-credential-service` | Lambda | JVM (SnapStart, 512MB) | Hot-path credential exchange |
-| `eks-dx-mgmt-service` | Lambda | JVM (256MB) | Cluster/association CRUD |
-| `eks-dx-tenant-service` | Lambda | Native arm64 or JVM (128MB, 15min) | Tenant lifecycle orchestrator |
-| `eks-dx-auth-proxy` | Container | JVM | In-cluster TokenReview + forwarding |
-| `eks-dx-pod-identity-webhook` | Container | JVM | Pod mutation admission webhook |
-| `eks-dx-karpenter-support` | Container | JVM | EC2NodeClass webhook + reconciler |
-| `eks-dx-cli` | CLI | Native (GraalVM) | `eks-dx` command-line tool |
+| `ecp-model` | Library | — | Shared: `TokenClaims`, `CallerIdentity` |
+| `ecp-credential-service` | Lambda | JVM (SnapStart, 512MB) | Hot-path credential exchange |
+| `ecp-mgmt-service` | Lambda | JVM (256MB) | Cluster/association CRUD |
+| `ecp-tenant-service` | Lambda | Native arm64 or JVM (128MB, 15min) | Tenant lifecycle orchestrator |
+| `ecp-auth-proxy` | Container | JVM | In-cluster TokenReview + forwarding |
+| `ecp-workload-identity-webhook` | Container | JVM | Pod mutation admission webhook |
+| `ecp-karpenter-support` | Container | JVM | EC2NodeClass webhook + reconciler |
+| `ecp-cli` | CLI | Native (GraalVM) | `ecp` command-line tool |
 | `infra` | CDK | JVM | CloudFormation stack definition |
 
 ## Programming Languages

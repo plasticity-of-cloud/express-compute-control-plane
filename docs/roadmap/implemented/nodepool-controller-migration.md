@@ -2,12 +2,12 @@
 
 ## Status: Implemented (v2.0.0, June 2026)
 
-**Module:** `eks-dx-karpenter-support`
+**Module:** `ecp-karpenter-support`
 **Key files:** `Ec2NodeClassReconciler.java`, `ValidationConditionService.java`
 
 ## Context
 
-`configure-nodepools.sh` (from `eks-d-xpress/node-pools/`) is an imperative bash script that must be
+`configure-nodepools.sh` (from `express-compute/node-pools/`) is an imperative bash script that must be
 run on the control-plane EC2 to bootstrap Karpenter node pools. It performs five distinct jobs:
 
 | # | Job | Current implementation |
@@ -52,7 +52,7 @@ kill $PROXY_PID 2>/dev/null
 
 ## Proposed Solution
 
-### Component 1: `eks-dx-karpenter-support` (new module)
+### Component 1: `ecp-karpenter-support` (new module)
 
 A single Quarkus application combining both the mutating webhook (userData injection, from
 `KARPENTER_EC2NODECLASS_WEBHOOK.md`) and the controller reconciler (ValidationSucceeded + AMI
@@ -62,7 +62,7 @@ runs a reconciler loop concurrently.
 
 **Module location:**
 ```
-eks-dx-karpenter-support/
+ecp-karpenter-support/
   src/main/java/.../
     resource/Ec2NodeClassWebhookResource.java   # POST /mutate-ec2nodeclass (userData injection)
     reconciler/Ec2NodeClassReconciler.java      # JOSDK reconciler (ValidationSucceeded + AMI)
@@ -75,9 +75,9 @@ eks-dx-karpenter-support/
   Dockerfile
 ```
 
-`eks-dx-pod-identity-webhook` remains unchanged as the reference implementation for standalone
-Quarkus admission webhooks. `eks-dx-karpenter-support` supersedes the planned
-`eks-dx-ec2nodeclass-webhook` module described in `KARPENTER_EC2NODECLASS_WEBHOOK.md`.
+`ecp-workload-identity-webhook` remains unchanged as the reference implementation for standalone
+Quarkus admission webhooks. `ecp-karpenter-support` supersedes the planned
+`ecp-ec2nodeclass-webhook` module described in `KARPENTER_EC2NODECLASS_WEBHOOK.md`.
 
 **Reconciler logic (per EC2NodeClass CREATE/UPDATE):**
 
@@ -102,7 +102,7 @@ rules:
   verbs: ["patch"]
 - apiGroups: [""]
   resources: ["configmaps"]
-  resourceNames: ["kubeadm-config", "kube-root-ca.crt", "eks-dx-config"]
+  resourceNames: ["kubeadm-config", "kube-root-ca.crt", "ecp-config"]
   verbs: ["get"]
 ```
 
@@ -131,7 +131,7 @@ kind: EC2NodeClass
 metadata:
   name: default
   annotations:
-    eks-dx.codriverlabs.ai/node-variant: "al2023"   # controller resolves → patches amiSelectorTerms
+    ecp.codriverlabs.ai/node-variant: "al2023"   # controller resolves → patches amiSelectorTerms
 spec:
   amiFamily: Custom
   amiSelectorTerms: []   # controller fills this in
@@ -158,7 +158,7 @@ ssm:GetParameter on /aws/service/bottlerocket/*
 The script's resource discovery (subnet, SG) and NodePool creation can be driven by a new CRD:
 
 ```yaml
-apiVersion: eks-dx.codriverlabs.ai/v1alpha1
+apiVersion: ecp.codriverlabs.ai/v1alpha1
 kind: TenantNodePoolConfig
 metadata:
   name: default
@@ -182,14 +182,14 @@ Resource discovery during reconciliation:
 | Resource | Discovery method |
 |----------|-----------------|
 | `subnetId` | `ec2:DescribeSubnets` filtered by `tag:Developer={tenantId}` + `tag:SubnetType=Public` |
-| `securityGroupId` | `ec2:DescribeSecurityGroups` filtered by `group-name={tenantId}-eks-d-xpress` |
-| `instanceProfile` | Derived: `eks-d-xpress-tenant-{tenantId}-instance-role` (naming convention, no API call) |
+| `securityGroupId` | `ec2:DescribeSecurityGroups` filtered by `group-name={tenantId}-express-compute` |
+| `instanceProfile` | Derived: `express-compute-tenant-{tenantId}-instance-role` (naming convention, no API call) |
 
 The controller writes discovered IDs into `status.resolvedSubnetId`, `status.resolvedSecurityGroupId`
 for observability, and re-reconciles on a 1-hour period to pick up infra changes.
 
 **AWS credential access for resource discovery:** The controller runs on the control-plane node and
-uses the instance profile (IRSA-equivalent via Pod Identity agent after it's installed). The tenant
+uses the instance profile (IRSA-equivalent via Workload Identity agent after it's installed). The tenant
 IAM role already has `ec2:DescribeSubnets` and `ec2:DescribeSecurityGroups` in its policy.
 
 ---
@@ -198,7 +198,7 @@ IAM role already has `ec2:DescribeSubnets` and `ec2:DescribeSecurityGroups` in i
 
 ### Phase 1 — ValidationSucceeded controller (unblocks Karpenter, replaces the hack)
 
-Deploy `eks-dx-ec2nodeclass-controller` with only the status patching logic. The Helm chart
+Deploy `ecp-ec2nodeclass-controller` with only the status patching logic. The Helm chart
 continues to be applied manually via `configure-nodepools.sh`. The controller replaces the
 `kubectl proxy` + `curl` block entirely.
 
@@ -208,17 +208,17 @@ handles it asynchronously within seconds of `EC2NodeClass` creation.
 ### Phase 2 — AMI annotation resolution
 
 Add `AmiResolutionService` to the controller. Users annotate `EC2NodeClass` with
-`eks-dx.codriverlabs.ai/node-variant` instead of supplying `amiSelectorTerms`. Controller patches
+`ecp.codriverlabs.ai/node-variant` instead of supplying `amiSelectorTerms`. Controller patches
 the spec. Helm chart drops `amiId` value; `configure-nodepools.sh` drops the SSM lookup block.
 
 ### Phase 3 — TenantNodePoolConfig CRD
 
-Deploy the `TenantNodePoolConfig` CRD and controller reconciler. The CLI (`eks-dx nodepool apply`)
+Deploy the `TenantNodePoolConfig` CRD and controller reconciler. The CLI (`ecp nodepool apply`)
 creates the CRD instance; controller owns `EC2NodeClass` + `NodePool` lifecycle.
 `configure-nodepools.sh` is retired — replaced by:
 
 ```bash
-eks-dx nodepool apply --tenant-id "$TENANT_ID" --variant al2023 --capacity-type spot
+ecp nodepool apply --tenant-id "$TENANT_ID" --variant al2023 --capacity-type spot
 ```
 
 The CLI command creates a `TenantNodePoolConfig` in the cluster; the controller takes it from there.
@@ -233,8 +233,8 @@ Karpenter's node drift detection then replaces existing nodes on its schedule.
 
 ## Relationship to KARPENTER_EC2NODECLASS_WEBHOOK.md
 
-`KARPENTER_EC2NODECLASS_WEBHOOK.md` described a standalone `eks-dx-ec2nodeclass-webhook` module.
-That plan is superseded — all concerns are consolidated into `eks-dx-karpenter-support`:
+`KARPENTER_EC2NODECLASS_WEBHOOK.md` described a standalone `ecp-ec2nodeclass-webhook` module.
+That plan is superseded — all concerns are consolidated into `ecp-karpenter-support`:
 
 | Concern | Handler |
 |---------|---------|
@@ -262,7 +262,7 @@ selector post-admission.
 
 ## Implementation Order
 
-1. **Phase 1** — `eks-dx-karpenter-support` module: `Ec2NodeClassReconciler` with `ValidationConditionService` + webhook endpoint for userData injection (consolidates `KARPENTER_EC2NODECLASS_WEBHOOK.md` Phase 1)
+1. **Phase 1** — `ecp-karpenter-support` module: `Ec2NodeClassReconciler` with `ValidationConditionService` + webhook endpoint for userData injection (consolidates `KARPENTER_EC2NODECLASS_WEBHOOK.md` Phase 1)
 2. **Phase 2** — `AmiResolutionService` + annotation-driven SSM lookup
 3. **Phase 3** — `TenantNodePoolConfig` CRD + CLI command; retire `configure-nodepools.sh`
 4. **Phase 4** — AMI TTL cache + rolling update support
