@@ -13,7 +13,7 @@ import java.util.List;
 @ApplicationScoped
 public class DryRunProvisioningService {
 
-    @ConfigProperty(name = "ecp.dry-run", defaultValue = "false")
+    @ConfigProperty(name = "express-compute.dry-run", defaultValue = "false")
     boolean dryRun;
 
     public boolean isEnabled() {
