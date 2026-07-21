@@ -54,7 +54,7 @@ jobs:
       - name: Lint Helm charts
         run: |
           helm lint ecp-auth-proxy/target/helm/kubernetes/express-compute-auth-proxy
-          helm lint ecp-workload-identity-webhook/target/helm/kubernetes/express-compute-pod-identity-webhook
+          helm lint ecp-workload-identity-webhook/target/helm/kubernetes/express-compute-workload-identity-webhook
 
   integration-test:
     runs-on: ubuntu-24.04

@@ -18,7 +18,7 @@ import java.util.Map;
 public class WebhookAuthFilter implements ContainerRequestFilter {
 
     private static final Logger LOG = Logger.getLogger(WebhookAuthFilter.class);
-    private static final String WEBHOOK_SA = "system:serviceaccount:kube-system:express-compute-pod-identity-webhook";
+    private static final String WEBHOOK_SA = "system:serviceaccount:kube-system:express-compute-workload-identity-webhook";
 
     @Inject JwksTokenValidationService tokenValidationService;
 

@@ -2,26 +2,26 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: express-compute-pod-identity-webhook
+  name: express-compute-workload-identity-webhook
 rules: []
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: express-compute-pod-identity-webhook
+  name: express-compute-workload-identity-webhook
 subjects:
 - kind: ServiceAccount
-  name: express-compute-pod-identity-webhook
+  name: express-compute-workload-identity-webhook
   namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: express-compute-pod-identity-webhook
+  name: express-compute-workload-identity-webhook
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: express-compute-pod-identity-webhook-selfsigned
+  name: express-compute-workload-identity-webhook-selfsigned
   namespace: kube-system
 spec:
   selfSigned: {}
@@ -29,45 +29,45 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: express-compute-pod-identity-webhook-ca
+  name: express-compute-workload-identity-webhook-ca
   namespace: kube-system
 spec:
   isCA: true
-  commonName: express-compute-pod-identity-webhook-ca
-  secretName: express-compute-pod-identity-webhook-ca
+  commonName: express-compute-workload-identity-webhook-ca
+  secretName: express-compute-workload-identity-webhook-ca
   issuerRef:
-    name: express-compute-pod-identity-webhook-selfsigned
+    name: express-compute-workload-identity-webhook-selfsigned
     kind: Issuer
 ---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: express-compute-pod-identity-webhook-ca
+  name: express-compute-workload-identity-webhook-ca
   namespace: kube-system
 spec:
   ca:
-    secretName: express-compute-pod-identity-webhook-ca
+    secretName: express-compute-workload-identity-webhook-ca
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: express-compute-pod-identity-webhook-cert
+  name: express-compute-workload-identity-webhook-cert
   namespace: kube-system
 spec:
-  secretName: express-compute-pod-identity-webhook-tls
+  secretName: express-compute-workload-identity-webhook-tls
   issuerRef:
-    name: express-compute-pod-identity-webhook-ca
+    name: express-compute-workload-identity-webhook-ca
     kind: Issuer
   dnsNames:
-  - express-compute-pod-identity-webhook.kube-system.svc
-  - express-compute-pod-identity-webhook.kube-system.svc.cluster.local
+  - express-compute-workload-identity-webhook.kube-system.svc
+  - express-compute-workload-identity-webhook.kube-system.svc.cluster.local
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: express-compute-pod-identity-webhook
+  name: express-compute-workload-identity-webhook
   annotations:
-    cert-manager.io/inject-ca-from: kube-system/express-compute-pod-identity-webhook-cert
+    cert-manager.io/inject-ca-from: kube-system/express-compute-workload-identity-webhook-cert
 webhooks:
 - name: pod-identity.codriverlabs.ai
   rules:
@@ -79,7 +79,7 @@ webhooks:
   clientConfig:
     service:
       namespace: kube-system
-      name: express-compute-pod-identity-webhook
+      name: express-compute-workload-identity-webhook
       path: /mutate
       port: 8443
   admissionReviewVersions: ["v1"]

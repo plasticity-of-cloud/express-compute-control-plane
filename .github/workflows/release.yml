@@ -130,11 +130,11 @@ jobs:
           done
 
           helm push ecp-auth-proxy/target/helm/kubernetes/express-compute-auth-proxy-${VERSION}.tar.gz oci://${REGISTRY}/helm
-          helm push ecp-workload-identity-webhook/target/helm/kubernetes/express-compute-pod-identity-webhook-${VERSION}.tar.gz oci://${REGISTRY}/helm
+          helm push ecp-workload-identity-webhook/target/helm/kubernetes/express-compute-workload-identity-webhook-${VERSION}.tar.gz oci://${REGISTRY}/helm
           helm push ecp-karpenter-support/target/helm/kubernetes/express-compute-karpenter-support-${VERSION}.tar.gz oci://${REGISTRY}/helm
 
           cp ecp-auth-proxy/target/helm/kubernetes/express-compute-auth-proxy-${VERSION}.tar.gz express-compute-auth-proxy-${VERSION}.tar.gz
-          cp ecp-workload-identity-webhook/target/helm/kubernetes/express-compute-pod-identity-webhook-${VERSION}.tar.gz express-compute-pod-identity-webhook-${VERSION}.tar.gz
+          cp ecp-workload-identity-webhook/target/helm/kubernetes/express-compute-workload-identity-webhook-${VERSION}.tar.gz express-compute-workload-identity-webhook-${VERSION}.tar.gz
           cp ecp-karpenter-support/target/helm/kubernetes/express-compute-karpenter-support-${VERSION}.tar.gz express-compute-karpenter-support-${VERSION}.tar.gz
 
       - name: Upload package artifacts
@@ -146,7 +146,7 @@ jobs:
             ecp-credential-service-*.zip
             ecp-mgmt-service-*.zip
             express-compute-auth-proxy-*.tar.gz
-            express-compute-pod-identity-webhook-*.tar.gz
+            express-compute-workload-identity-webhook-*.tar.gz
             express-compute-karpenter-support-*.tar.gz
 
   # ── multiarch-manifest-build ─────────────────────────────────────────────
@@ -165,7 +165,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           REPO=ghcr.io/${{ github.repository_owner }}
-          for IMAGE in express-compute-auth-proxy express-compute-pod-identity-webhook express-compute-karpenter-support; do
+          for IMAGE in express-compute-auth-proxy express-compute-workload-identity-webhook express-compute-karpenter-support; do
             docker buildx imagetools create -t ${REPO}/${IMAGE}:${VERSION} \
               ${REPO}/${IMAGE}:${VERSION}-amd64 \
               ${REPO}/${IMAGE}:${VERSION}-arm64

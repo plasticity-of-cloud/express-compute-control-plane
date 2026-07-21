@@ -32,7 +32,7 @@ public class ClusterResource {
 
     @Inject TenantProvisioningService provisioningService;
 
-    @ConfigProperty(name = "ecp.deployment-mode", defaultValue = "hybrid")
+    @ConfigProperty(name = "express-compute.deployment-mode", defaultValue = "hybrid")
     String deploymentMode;
 
     public static class CreateClusterRequest {

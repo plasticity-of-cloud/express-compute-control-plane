@@ -1,5 +1,5 @@
-eks-d-xpress-pod-identity-webhook deployed to namespace {{ .Release.Namespace }}.
+express-compute-workload-identity-webhook deployed to namespace {{ .Release.Namespace }}.
 
 Verify:
-  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name=eks-d-xpress-pod-identity-webhook
-  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=eks-d-xpress-pod-identity-webhook
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name=express-compute-workload-identity-webhook
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=express-compute-workload-identity-webhook

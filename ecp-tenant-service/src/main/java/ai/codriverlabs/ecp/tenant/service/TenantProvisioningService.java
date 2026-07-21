@@ -1047,7 +1047,7 @@ public class TenantProvisioningService {
     // Ownership & Quota
     // -------------------------------------------------------------------------
 
-    @ConfigProperty(name = "ecp.quota.max-tenants-per-caller", defaultValue = "1")
+    @ConfigProperty(name = "express-compute.quota.max-tenants-per-caller", defaultValue = "1")
     int maxTenantsPerCaller;
 
     public int getMaxTenantsPerCaller() { return maxTenantsPerCaller; }

@@ -142,8 +142,8 @@ fi
 
 # 5. Pod identity webhook
 if should_build "webhook"; then
-  echo "--- pod-identity-webhook"
-  ensure_ecr_repo "codriverlabs/express-compute-pod-identity-webhook"
+  echo "--- workload-identity-webhook"
+  ensure_ecr_repo "codriverlabs/express-compute-workload-identity-webhook"
   mvn -B -pl ecp-workload-identity-webhook clean package $SKIP_FLAG $(image_flags) \
     -Dquarkus.helm.version=${IMAGE_TAG}
 fi
