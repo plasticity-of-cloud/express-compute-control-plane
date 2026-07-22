@@ -533,35 +533,21 @@ public class TenantProvisioningService {
         if (!"stopped".equals(instanceState))
             throw new IllegalArgumentException("Instance " + tenant.instanceId() + " is " + instanceState + " — can only resume a stopped instance");
 
+        // Spot instances: wait for the Spot Request to leave transitional state before starting.
+        // After a user-initiated stop/hibernate, the request transitions from
+        // "marked-for-stop" → "instance-stopped-by-user" (state: disabled).
+        // StartInstances is rejected while the request is still in a transitional status.
+        if ("spot".equals(tenant.ec2PricingModel())) {
+            waitForSpotRequestStartable(tenant.instanceId());
+        }
+
         ec2.startInstances(software.amazon.awssdk.services.ec2.model.StartInstancesRequest.builder()
             .instanceIds(tenant.instanceId())
             .build());
         updateState(tenantId, "resuming");
         LOG.infof("Resuming tenant %s (instance %s)", tenantId, tenant.instanceId());
-
-        // Wait for the instance to reach running state, then mark ready
-        try {
-            ec2.waiter().waitUntilInstanceRunning(r -> r.instanceIds(tenant.instanceId()));
-            LOG.infof("Instance %s is running", tenant.instanceId());
-
-            // Refresh public IP (may change on stop/start for non-EIP instances)
-            var desc = ec2.describeInstances(r -> r.instanceIds(tenant.instanceId()));
-            var instance = desc.reservations().getFirst().instances().getFirst();
-            String publicIp = instance.publicIpAddress();
-            if (publicIp != null) {
-                dynamoDb.updateItem(UpdateItemRequest.builder()
-                    .tableName(tenantsTable)
-                    .key(Map.of("tenantId", AttributeValue.fromS(tenantId)))
-                    .updateExpression("SET publicIp = :ip")
-                    .expressionAttributeValues(Map.of(":ip", AttributeValue.fromS(publicIp)))
-                    .build());
-            }
-            updateState(tenantId, "ready");
-            LOG.infof("Tenant %s resumed successfully", tenantId);
-        } catch (Exception e) {
-            LOG.errorf("Failed waiting for instance %s to start: %s", tenant.instanceId(), e.getMessage());
-            updateState(tenantId, "ready"); // instance was started, mark ready even if waiter timed out
-        }
+        // State transitions to "ready" via read-repair in getStateByClusterName() when
+        // the CLI polls for status. No blocking waiter needed.
     }
 
     private String describeInstanceState(String instanceId) {
@@ -571,7 +557,35 @@ public class TenantProvisioningService {
         return resp.reservations().getFirst().instances().getFirst().state().nameAsString();
     }
 
-    /** Look up tenant state by cluster name (clustersTable PK). */
+    /**
+     * Waits for a Spot Instance's associated request to leave transitional states
+     * (e.g. "marked-for-stop") so that StartInstances can succeed.
+     * Polls every 2s for up to 60s. After stop/hibernate, the request transitions:
+     *   active/marked-for-stop → disabled/instance-stopped-by-user
+     */
+    private void waitForSpotRequestStartable(String instanceId) {
+        var desc = ec2.describeInstances(r -> r.instanceIds(instanceId));
+        String spotRequestId = desc.reservations().getFirst().instances().getFirst().spotInstanceRequestId();
+        if (spotRequestId == null) return;
+
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (System.currentTimeMillis() < deadline) {
+            var sirResp = ec2.describeSpotInstanceRequests(r -> r.spotInstanceRequestIds(spotRequestId));
+            if (sirResp.spotInstanceRequests().isEmpty()) return;
+            var sir = sirResp.spotInstanceRequests().getFirst();
+            String statusCode = sir.status().code();
+            // Transitional statuses that block StartInstances
+            if (!"marked-for-stop".equals(statusCode) && !"marked-for-hibernation".equals(statusCode)) {
+                LOG.infof("Spot request %s ready for start (status: %s)", spotRequestId, statusCode);
+                return;
+            }
+            LOG.infof("Spot request %s still transitioning (status: %s), waiting...", spotRequestId, statusCode);
+            try { Thread.sleep(2_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+        }
+        LOG.warnf("Spot request %s still in transitional state after 60s — attempting StartInstances anyway", spotRequestId);
+    }
+
+    /** Look up tenant state by cluster name (clustersTable PK). Performs read-repair for transitional states. */
     public TenantItem getStateByClusterName(String clusterName) {
         GetItemResponse resp = dynamoDb.getItem(GetItemRequest.builder()
             .tableName(clustersTable)
@@ -582,7 +596,36 @@ public class TenantProvisioningService {
         AttributeValue tenantIdAttr = resp.item().get("tenantId");
         if (tenantIdAttr == null)
             throw new IllegalArgumentException("No tenant associated with cluster: " + clusterName);
-        return getState(tenantIdAttr.s());
+        TenantItem tenant = getState(tenantIdAttr.s());
+
+        // Read-repair: if DynamoDB says "resuming" but instance is actually running, flip to "ready"
+        if ("resuming".equals(tenant.state()) && tenant.instanceId() != null) {
+            String instanceId = tenant.instanceId();
+            String tenantId = tenant.tenantId();
+            try {
+                String actual = describeInstanceState(instanceId);
+                if ("running".equals(actual)) {
+                    // Refresh public IP (may change after stop/start)
+                    var desc = ec2.describeInstances(r -> r.instanceIds(instanceId));
+                    var instance = desc.reservations().getFirst().instances().getFirst();
+                    String publicIp = instance.publicIpAddress();
+                    if (publicIp != null && !publicIp.equals(tenant.publicIp())) {
+                        dynamoDb.updateItem(UpdateItemRequest.builder()
+                            .tableName(tenantsTable)
+                            .key(Map.of("tenantId", AttributeValue.fromS(tenantId)))
+                            .updateExpression("SET publicIp = :ip")
+                            .expressionAttributeValues(Map.of(":ip", AttributeValue.fromS(publicIp)))
+                            .build());
+                    }
+                    updateState(tenantId, "ready");
+                    LOG.infof("Read-repair: tenant %s instance running, state → ready", tenantId);
+                    tenant = getState(tenantId);
+                }
+            } catch (Exception e) {
+                LOG.debugf("Read-repair check failed for %s: %s", tenantId, e.getMessage());
+            }
+        }
+        return tenant;
     }
 
     /** Stop a managed cluster by cluster name. Enforces ownership check. */
