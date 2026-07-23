@@ -19,7 +19,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.LinkedHashMap;
 
 /**
@@ -234,22 +233,13 @@ public class UnifiedCreateClusterCommand implements Runnable {
                     }
 
                     if ("ready".equals(state)) {
-                        String publicIp = event.path("publicIp").asText(null);
-                        String sshKey = event.path("sshPrivateKey").asText(null);
                         if ("text".equals(output)) {
                             System.out.println("\n✓ Cluster ready.");
-                            if (publicIp != null) System.out.println("  Public IP: " + publicIp);
                         } else {
                             System.out.println(json);
                         }
-                        if (sshKey != null) {
-                            Path keyPath = config.tenantSshKeyPath(resolvedRegion, tenantId);
-                            Files.createDirectories(keyPath.getParent());
-                            Files.writeString(keyPath, sshKey);
-                            try { Files.setPosixFilePermissions(keyPath, PosixFilePermissions.fromString("rw-------")); }
-                            catch (UnsupportedOperationException ignored) {}
-                            if ("text".equals(output)) System.out.println("  SSH key: " + keyPath);
-                        }
+                        // Automatically save SSH key and print connection info
+                        ClusterAccessHelper.saveKeyAndPrintAccess(name, resolvedRegion, config, output);
                         return;
                     }
                     if ("failed".equals(state)) {

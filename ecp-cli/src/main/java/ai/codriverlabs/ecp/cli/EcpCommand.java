@@ -15,7 +15,7 @@ import picocli.CommandLine.Command;
  */
 @TopCommand
 @Command(name = "ecp", mixinStandardHelpOptions = true,
-    description = "EKS-DX — Workload Identity for k3s, microk8s, and EKS-D clusters",
+    description = "Express Compute Control Plane Service with Workload Identity for EKS-DX, EKS-D, k3s, and microk8s clusters",
     subcommands = {
         ConfigureCommand.class,
         CreateClusterCmd.class,

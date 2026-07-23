@@ -19,7 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 
-@Command(name = "tenant", description = "Provision a new EKS-D-Xpress tenant cluster")
+@Command(name = "tenant", description = "Provision a new Express Compute cluster")
 public class CreateTenantCommand implements Runnable {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

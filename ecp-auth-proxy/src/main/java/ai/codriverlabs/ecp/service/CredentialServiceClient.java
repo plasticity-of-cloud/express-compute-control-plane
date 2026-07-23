@@ -12,7 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Forwards credential exchange requests to the EKS-DX Lambda service.
+ * Forwards credential exchange requests to the Express Compute Lambda service.
  * Attaches the proxy's own SA token (audience: ecp.codriverlabs.ai) as
  * Authorization header so the Lambda can verify the request originated from
  * a legitimate proxy inside the registered cluster.
@@ -48,7 +48,7 @@ public class CredentialServiceClient {
 
         } catch (Exception e) {
             LOG.errorf("Failed to forward to Lambda: %s", e.getMessage());
-            throw new RuntimeException("Failed to reach EKS-DX service: " + e.getMessage(), e);
+            throw new RuntimeException("Failed to reach Express Compute service: " + e.getMessage(), e);
         }
     }
 

@@ -31,6 +31,6 @@ fi
 
 echo "==> Destroying CDK stack"
 cd infra
-cdk destroy ECPpressControlPlaneStack --force $AWS_PROFILE_ARG
+cdk destroy ExpressComputeControlPlaneStack --force $AWS_PROFILE_ARG
 
 echo "==> Stack destroyed"

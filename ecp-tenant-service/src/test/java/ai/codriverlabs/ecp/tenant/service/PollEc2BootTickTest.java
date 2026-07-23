@@ -56,7 +56,7 @@ class PollEc2BootTickTest {
         assertEquals("provisioning", result.state());
         assertEquals("provisioning_started", result.phase());
         assertEquals("1.2.3.4", result.publicIp());
-        assertEquals(25, result.progress());
+        assertEquals(2, result.progress());
     }
 
     @Test
@@ -69,7 +69,7 @@ class PollEc2BootTickTest {
         assertNotNull(result);
         assertEquals("provisioning", result.state());
         assertTrue(result.phase().contains("pending"));
-        assertEquals(10, result.progress());
+        assertEquals(1, result.progress());
     }
 
     @Test
@@ -93,7 +93,7 @@ class PollEc2BootTickTest {
         assertNotNull(result);
         assertEquals("provisioning", result.state());
         assertTrue(result.phase().contains("running"));
-        assertEquals(10, result.progress());
+        assertEquals(1, result.progress());
     }
 
     private void mockTenantItem(String tenantId, String instanceId, String state) {

@@ -10,7 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
 /**
- * JDK HttpClient wrapper for EKS-DX Lambda API calls.
+ * JDK HttpClient wrapper for Express Compute Lambda API calls.
  * Reads endpoint from ~/.ecp/config → ECP_ENDPOINT env → default.
  * Signs management requests with AWS SigV4 when credentials are available.
  */
@@ -228,7 +228,7 @@ public class EcpApiClient {
 
             return response.body();
         } catch (Exception e) {
-            System.err.printf("Failed to reach EKS-DX service at %s: %s%n", baseUrl, e.getMessage());
+            System.err.printf("Failed to reach Express Compute service at %s: %s%n", baseUrl, e.getMessage());
             System.exit(1);
             return null;
         }

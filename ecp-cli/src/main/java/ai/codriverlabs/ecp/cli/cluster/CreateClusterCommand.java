@@ -11,7 +11,7 @@ import picocli.CommandLine.Option;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-@Command(name = "cluster", description = "Register a cluster with EKS-DX")
+@Command(name = "cluster", description = "Register a cluster with Express Compute")
 public class CreateClusterCommand implements Runnable {
 
     @Inject EcpApiClient apiClient;

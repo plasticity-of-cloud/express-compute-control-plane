@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * Manages trust policy statements on target roles for EKS-DX Workload Identity.
+ * Manages trust policy statements on target roles for Express Compute Workload Identity.
  * Append-only on CREATE, targeted removal on DELETE.
  */
 @ApplicationScoped
@@ -129,7 +129,7 @@ public class TrustPolicyService {
         if (!decodedTrustPolicy.contains(BROKER_ROLE_NAME))
             throw new IllegalArgumentException(
                 "Role trust policy must reference principal " + BROKER_ROLE_NAME +
-                ". Tag the role with '" + ECP_MANAGED_TAG + "=true' and EKS-DX will manage the trust policy automatically.");
+                ". Tag the role with '" + ECP_MANAGED_TAG + "=true' and Express Compute will manage the trust policy automatically.");
     }
 
     public String buildStatement(String clusterName, String namespace, String serviceAccount) {

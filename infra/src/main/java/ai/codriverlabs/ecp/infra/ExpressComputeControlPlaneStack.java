@@ -53,7 +53,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * CDK stack for EKS-DX — at parity with sam.yaml.
+ * CDK stack for Express Compute — at parity with sam.yaml.
  *
  * Deployment modes (CDK context: deploymentMode):
  *   self-managed — credential-service + mgmt-service only (no infra stack dependency)
@@ -319,7 +319,7 @@ public class ExpressComputeControlPlaneStack extends Stack {
             StringParameter.Builder.create(this, "ApiEndpointParam")
                 .parameterName(endpointParamName)
                 .stringValue(api.getUrl())
-                .description("EKS-DX API Gateway endpoint — read by EC2 instances at boot")
+                .description("Express Compute API Gateway endpoint — read by EC2 instances at boot")
                 .build();
 
             // Quota: max tenants per caller identity (ownership isolation)
@@ -380,13 +380,13 @@ public class ExpressComputeControlPlaneStack extends Stack {
             StringParameter.Builder.create(this, "TenantStreamUrlParam")
                 .parameterName("/express-compute/control-plane/api/stream-url")
                 .stringValue(tenantFunctionUrl.getUrl())
-                .description("EKS-DX tenant Function URL — used for both SSE stream and provisioning")
+                .description("Express Compute tenant Function URL — used for both SSE stream and provisioning")
                 .build();
 
             StringParameter.Builder.create(this, "TenantProvisioningUrlParam")
                 .parameterName("/express-compute/control-plane/api/provisioning-url")
                 .stringValue(tenantFunctionUrl.getUrl())
-                .description("EKS-DX tenant provisioning Function URL — same as stream URL")
+                .description("Express Compute tenant provisioning Function URL — same as stream URL")
                 .build();
 
             tenantsTable.grantReadWriteData(tenantFn);
@@ -582,7 +582,7 @@ public class ExpressComputeControlPlaneStack extends Stack {
         // Outputs
         // -----------------------------------------------------------------------
         CfnOutput.Builder.create(this, "Endpoint")
-            .description("EKS-DX API endpoint")
+            .description("Express Compute API endpoint")
             .value(api.getUrl()).build();
 
         CfnOutput.Builder.create(this, "CustomEndpoint")

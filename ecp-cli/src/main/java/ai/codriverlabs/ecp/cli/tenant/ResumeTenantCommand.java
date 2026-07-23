@@ -1,5 +1,6 @@
 package ai.codriverlabs.ecp.cli.tenant;
 
+import ai.codriverlabs.ecp.cli.cluster.ClusterAccessHelper;
 import ai.codriverlabs.ecp.cli.config.EcpConfig;
 import ai.codriverlabs.ecp.cli.util.EcpApiClient;
 import jakarta.inject.Inject;
@@ -16,6 +17,9 @@ public class ResumeTenantCommand implements Runnable {
 
     @Option(names = "--wait", description = "Wait until cluster is reachable", defaultValue = "true")
     boolean wait;
+
+    @Option(names = "--output", defaultValue = "text", description = "Output format: text or json")
+    String output;
 
     @Override
     public void run() {
@@ -46,6 +50,9 @@ public class ResumeTenantCommand implements Runnable {
                 String body = apiClient.getBodyOnUrl(provisioningUrl, "/clusters/" + clusterName, "lambda");
                 if (body != null && (body.contains("\"ready\"") || body.contains("\"running\""))) {
                     System.out.printf("✓ Cluster \"%s\" running%n", clusterName);
+                    // Automatically save SSH key and print connection info
+                    String resolvedRegion = config.getRegion();
+                    ClusterAccessHelper.saveKeyAndPrintAccess(clusterName, resolvedRegion, config, output);
                     return;
                 }
             }

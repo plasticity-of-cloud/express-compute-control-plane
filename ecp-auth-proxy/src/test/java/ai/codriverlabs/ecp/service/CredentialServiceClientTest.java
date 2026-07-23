@@ -22,7 +22,7 @@ class CredentialServiceClientTest {
     void forward_throwsRuntimeException_whenEndpointUnreachable() {
         var ex = assertThrows(RuntimeException.class,
             () -> service.forward("test-cluster", "{\"token\":\"abc\"}"));
-        assertTrue(ex.getMessage().contains("Failed to reach EKS-DX service"));
+        assertTrue(ex.getMessage().contains("Failed to reach Express Compute service"));
     }
 
     @Test
@@ -32,6 +32,6 @@ class CredentialServiceClientTest {
         // but we verify the exception message contains the endpoint
         var ex = assertThrows(RuntimeException.class,
             () -> service.forward("my-cluster", "{\"token\":\"abc\"}"));
-        assertTrue(ex.getMessage().contains("Failed to reach EKS-DX service"));
+        assertTrue(ex.getMessage().contains("Failed to reach Express Compute service"));
     }
 }

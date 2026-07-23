@@ -10,8 +10,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * EKS-DX provider: existing behavior for non-EKS clusters (EKS-D, kubeadm, k3s, Rancher).
- * Stores associations in DynamoDB. Credential exchange via EKS-DX credential-service Lambda.
+ * Express Compute provider: existing behavior for non-EKS clusters (EKS-D, kubeadm, k3s, Rancher).
+ * Stores associations in DynamoDB. Credential exchange via Express Compute credential-service Lambda.
  * This is the default provider — all existing clusters use this.
  */
 @ApplicationScoped

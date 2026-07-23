@@ -20,7 +20,7 @@ public class InfraApp {
         String region = (String) app.getNode().tryGetContext("region");
 
         StackProps.Builder propsBuilder = StackProps.builder()
-            .description("EKS-DX Service — Workload Identity for k3s, microk8s, and EKS-D clusters");
+            .description("Express Compute Control Plane Service with Workload Identity for EKS-DX, EKS-D, k3s, and microk8s clusters");
 
         if (account != null && region != null) {
             propsBuilder.env(Environment.builder()

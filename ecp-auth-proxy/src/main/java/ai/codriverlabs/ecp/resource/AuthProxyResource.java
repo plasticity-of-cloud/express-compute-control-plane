@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * AWS-API-compatible endpoint that the EKS Workload Identity Agent calls.
  * Validates the token locally via TokenReview (fast-fail), then forwards
- * the full credential exchange to the EKS-DX Lambda service.
+ * the full credential exchange to the Express Compute Lambda service.
  */
 @Path("/clusters")
 @Produces(MediaType.APPLICATION_JSON)

@@ -21,9 +21,9 @@ public class DryRunProvisioningService {
     }
 
     private static final List<TenantProgress> SIMULATED_EVENTS = List.of(
-        new TenantProgress("provisioning", "EC2 instance pending...", 5, null, 0, null, null),
-        new TenantProgress("provisioning", "EC2 instance running...", 10, null, 5, null, null),
-        new TenantProgress("provisioning", "provisioning_started", 25, "203.0.113.42", 10, null, null),
+        new TenantProgress("provisioning", "EC2 instance pending...", 1, null, 0, null, null),
+        new TenantProgress("provisioning", "EC2 instance running...", 1, null, 5, null, null),
+        new TenantProgress("provisioning", "provisioning_started", 2, "203.0.113.42", 10, null, null),
         new TenantProgress("provisioning", "Preparing etcd volume", 30, "203.0.113.42", 15, null, null),
         new TenantProgress("provisioning", "Configuring IAM authenticator", 35, "203.0.113.42", 20, null, null),
         new TenantProgress("kubeadm-init", "Initialising control plane", 40, "203.0.113.42", 25, null, null),

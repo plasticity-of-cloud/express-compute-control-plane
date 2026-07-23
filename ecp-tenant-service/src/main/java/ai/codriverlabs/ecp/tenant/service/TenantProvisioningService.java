@@ -473,14 +473,14 @@ public class TenantProvisioningService {
                     }
                 }
                 if (publicIp != null && !publicIp.isBlank())
-                    return new TenantProgress("provisioning", "provisioning_started", 25,
+                    return new TenantProgress("provisioning", "provisioning_started", 2,
                         publicIp, 0, null, null);
                 // Running but no public IP yet — keep polling
-                return new TenantProgress("provisioning", "EC2 instance running...", 10,
+                return new TenantProgress("provisioning", "EC2 instance running...", 1,
                     null, 0, null, null);
             }
 
-            return new TenantProgress("provisioning", "EC2 instance " + stateName + "...", 10,
+            return new TenantProgress("provisioning", "EC2 instance " + stateName + "...", 1,
                 null, 0, null, null);
         } catch (Exception e) {
             LOG.warnf("EC2 boot tick error for tenant %s: %s", tenantId, e.getMessage());

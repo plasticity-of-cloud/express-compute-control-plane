@@ -12,7 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Looks up Workload Identity Associations via the EKS-DX Lambda API.
+ * Looks up Workload Identity Associations via the Express Compute Lambda API.
  * Authenticates using a projected SA token with audience ecp.codriverlabs.ai.
  */
 @ApplicationScoped

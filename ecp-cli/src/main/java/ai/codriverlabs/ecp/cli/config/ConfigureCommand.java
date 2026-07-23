@@ -3,10 +3,10 @@ package ai.codriverlabs.ecp.cli.config;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
-@Command(name = "configure", description = "Configure EKS-DX CLI endpoint and region")
+@Command(name = "configure", description = "Configure Express Compute control plane endpoint and region")
 public class ConfigureCommand implements Runnable {
 
-    @Option(names = "--endpoint", description = "EKS-DX API endpoint URL")
+    @Option(names = "--endpoint", description = "Express Compute API endpoint URL")
     String endpoint;
 
     @Option(names = "--region", description = "AWS region")
